@@ -112,36 +112,49 @@ PathSort::PathSort()
 }
 
 //---
-void PathSort::sort(int* array,
-                    unsigned int count)
+void PathSort::sort8(__m256i& array)
 {
   __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
-  // Sort 8-wide in each batch.
-  unsigned int batches = count / 8;
-  for (unsigned int b = 0; b < batches; ++b) {
-    __m256i batch = _mm256_load_si256((__m256i*)&array[b << 3]);
-    __m256i rotated_batch = _mm256_permutevar8x32_epi32(batch,
-                                                        rotate_left);
-    int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(batch,
-                                                                               rotated_batch)));
-    int og_comparison = comparison;
-    __m256i permutation = _permute_table_avx[comparison];
-    batch = _mm256_permutevar8x32_epi32(batch,
-                                        permutation);
-    rotated_batch = _mm256_permutevar8x32_epi32(batch,
-                                                rotate_left);
-    comparison = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(batch,
-                                                                           rotated_batch)));
-    if (comparison != SORTED) {
-      SORT_8(batch,
-             permutation);
-      _permute_table_avx[og_comparison] = permutation;
-    }
-    _mm256_store_si256((__m256i*)&array[b << 3],
-                       batch);
+  __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
+                                                      rotate_left);
+  int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(array,
+                                                                             rotated_array)));
+  int og_comparison = comparison;
+  __m256i permutation = _permute_table_avx[comparison];
+  array = _mm256_permutevar8x32_epi32(array,
+                                      permutation);
+  rotated_array = _mm256_permutevar8x32_epi32(array,
+                                              rotate_left);
+  comparison = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(array,
+                                                                         rotated_array)));
+  if (comparison != SORTED) {
+    SORT_8(array,
+           permutation);
+    _permute_table_avx[og_comparison] = permutation;
   }
 }
 
+//---
+void PathSort::sort(int* array,
+                    unsigned int count)
+{
+  // Sort 8-wide in each batch.
+  unsigned int batches = count >> 3;
+  for (unsigned int b = 0; b < batches; ++b) {
+    __m256i batch = _mm256_load_si256((__m256i*) & array[b << 3]);
+    sort8(batch);
+    _mm256_store_si256((__m256i*)&array[b << 3],
+                       batch);
+  }
+  // Merge pairs of batches.
+  batches = count >> 4;
+  while (batches > 0) {
+
+    batches = count >> 5;
+  }
+}
+
+//---
 int main()
 {
   int* values = (int*)_aligned_malloc(sizeof(int) * 16, 32);

@@ -14,6 +14,7 @@ struct PathSort
   //---
   PathSort();
   ~PathSort() {}
+  void sort8(__m256i& array);
   void sort(int* array,
             unsigned int count);
 };
