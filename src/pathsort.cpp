@@ -1,5 +1,7 @@
 ﻿#include <stdio.h>
+#include <Windows.h>
 #include "src/pathsort.h"
+#include <algorithm>
 
 //---
 #define SORTED 0x80
@@ -175,21 +177,34 @@ void PathSort::sort(int* array,
 }
 
 //---
+unsigned long long ticks_now()
+{
+  LARGE_INTEGER now_ticks;
+  QueryPerformanceCounter(&now_ticks);
+  return now_ticks.QuadPart;
+}
+
+//---
 int main()
 {
-  const int count = 16 * 256;
+  const int count = 16 * 1000000;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
   for (int i = 0; i < count; ++i) {
     values[i] = count - i;
   }
-
   PathSort pathsort;
-  pathsort.sort(values, count);
+  for (int i = 0; i < 20; ++i) {
+    unsigned long long now = ticks_now();
+    pathsort.sort(values, count);
+    //std::sort(values, values + count);
+    printf("%llu ticks\n", ticks_now() - now);
+  }
 
+  /*
   for (int i = 0; i < count; ++i) {
     printf("%u\n", values[i]);
-  }
-  _aligned_free(values);
+  }*/
 
+  _aligned_free(values);
   return 0;
 }
