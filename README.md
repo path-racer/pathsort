@@ -1,4 +1,4 @@
-Pathsort:
+<h1>Pathsort</h1>
 
 - Stable, in-place. 
 - Dynamically adaptive to patterns in the data, at multiple levels.
