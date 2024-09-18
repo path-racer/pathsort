@@ -15,5 +15,8 @@
     <ClInclude Include="..\src\pathsort.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\avx2sort.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
