@@ -151,7 +151,7 @@ void PathSort::sort(int* array,
   // Merge pairs.
   int level = 0;
   unsigned int merges = count >> (4 + level);
-  while (merges > 0) {
+ // while (merges > 0) {
     unsigned int merge_size = 0x8 << level;
     for (unsigned int m = 0; m < merges; ++m) {
       __m256i* left =  (__m256i*)&array[(m << (4 + level))];
@@ -171,21 +171,22 @@ void PathSort::sort(int* array,
       _mm256_store_si256(right, sort3);
     }
     merges = count >> (4 + (++level));
-  }
+//  }
 }
 
 //---
 int main()
 {
-  int* values = (int*)_aligned_malloc(sizeof(int) * 16, 32);
-  for (int i = 0; i < 16; ++i) {
-    values[i] = 16 - i;
+  const int count = 16 * 256;
+  int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
+  for (int i = 0; i < count; ++i) {
+    values[i] = count - i;
   }
 
   PathSort pathsort;
-  pathsort.sort(values, 16);
+  pathsort.sort(values, count);
 
-  for (int i = 0; i < 16; ++i) {
+  for (int i = 0; i < count; ++i) {
     printf("%u\n", values[i]);
   }
   _aligned_free(values);
