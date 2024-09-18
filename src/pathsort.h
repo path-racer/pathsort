@@ -1,7 +1,5 @@
 #pragma once
 #include <immintrin.h>
-#include <avxintrin.h>
-#include <avx2intrin.h>
 
 //---
 struct PathSort

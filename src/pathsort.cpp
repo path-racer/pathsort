@@ -114,19 +114,21 @@ PathSort::PathSort()
 //---
 void PathSort::sort8(__m256i& array)
 {
-  __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
+  __m256i rotate_left =   _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
   __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
                                                       rotate_left);
-  int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(array,
-                                                                             rotated_array)));
+  int comparison =        _mm256_movemask_ps(_mm256_castsi256_ps(
+                                             _mm256_cmpgt_epi32(array,
+                                                                rotated_array)));
   int og_comparison = comparison;
   __m256i permutation = _permute_table_avx[comparison];
-  array = _mm256_permutevar8x32_epi32(array,
-                                      permutation);
+  array =         _mm256_permutevar8x32_epi32(array,
+                                              permutation);
   rotated_array = _mm256_permutevar8x32_epi32(array,
                                               rotate_left);
-  comparison = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(array,
-                                                                         rotated_array)));
+  comparison =    _mm256_movemask_ps(_mm256_castsi256_ps(
+                                     _mm256_cmpgt_epi32(array,
+                                                        rotated_array)));
   if (comparison != SORTED) {
     SORT_8(array,
            permutation);
@@ -146,11 +148,29 @@ void PathSort::sort(int* array,
     _mm256_store_si256((__m256i*)&array[b << 3],
                        batch);
   }
-  // Merge pairs of batches.
-  batches = count >> 4;
-  while (batches > 0) {
-
-    batches = count >> 5;
+  // Merge pairs.
+  int level = 0;
+  unsigned int merges = count >> (4 + level);
+  while (merges > 0) {
+    unsigned int merge_size = 0x8 << level;
+    for (unsigned int m = 0; m < merges; ++m) {
+      __m256i* left =  (__m256i*)&array[(m << (4 + level))];
+      __m256i* right = (__m256i*)&array[(m << (4 + level)) + merge_size];
+      __m256i l = _mm256_load_si256(left);
+      __m256i r = _mm256_load_si256(right);
+      __m256i sort0 = _mm256_permute2x128_si256(l, r, 0x20);
+      sort8(sort0);
+      __m256i sort1 = _mm256_permute2x128_si256(l, r, 0x31);
+      sort8(sort1);
+      __m256i sort2 = _mm256_blend_epi32(sort1, sort0, 0xF0);
+      sort8(sort2);
+      __m256i sort3 = _mm256_permute2x128_si256(sort1, sort2, 0x31);
+      sort8(sort3);
+      sort0 = _mm256_permute2x128_si256(sort0, sort2, 0x20);
+      _mm256_store_si256(left, sort0);
+      _mm256_store_si256(right, sort3);
+    }
+    merges = count >> (4 + (++level));
   }
 }
 
