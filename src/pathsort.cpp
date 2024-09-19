@@ -174,25 +174,38 @@ void PathSort::sort(int* array,
   // Merge pairs.
   int level = 0;
   unsigned int merges = count >> (4 + level);
- // while (merges > 0) {
+  while (merges > 0) {
     unsigned int merge_size = 0x8 << level;
     for (unsigned int m = 0; m < merges; ++m) {
       __m256i* left = (__m256i*) & array[(m << (4 + level))];
-      __m256i* right = (__m256i*) & array[(m << (4 + level)) + merge_size];
-      __m256i l = _mm256_load_si256(left);
-      __m256i r = _mm256_load_si256(right);
-
-      /*
-      avx2::_internal::sort_16(l, r);
-      _mm256_store_si256(left, l);
-      _mm256_store_si256(right, r);*/
-
-      merge16(l, r);
-      _mm256_store_si256(left, l);
-      _mm256_store_si256(right, r);
+      __m256i* right = (__m256i*) & array[((m << (4 + level)) + merge_size)];
+      __m256i* write = left;
+      __m256i L = _mm256_load_si256(left);
+      __m256i R = _mm256_load_si256(right);
+      merge16(L, R);
+      _mm256_store_si256(write++, L);
+      __m256i T = R;
+      unsigned int batches = merge_size >> 3;
+      for (int b = 1; b < batches; ++b) {
+        L = _mm256_load_si256(++left);
+        R = _mm256_load_si256(++right);
+        merge16(L, R);
+        merge16(L, T);
+        _mm256_store_si256(write++, L);
+        merge16(R, T);
+        _mm256_store_si256(write++, R);
+      }
+      _mm256_store_si256(write++, T);
     }
     merges = count >> (4 + (++level));
-//  }
+
+
+
+    for (int i = 0; i < count; ++i) {
+      printf("%i\n", array[i]);
+    }
+    printf("---\n");
+  }
 }
 
 //---
@@ -207,23 +220,19 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 16 * 1000000;
+  const int count = 64;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
   for (int i = 0; i < count; ++i) {
-    values[i] = random.next() & 0xFFFFFFFF;// i % 6;
+    values[i] = count - i;// random.next() & 0xFFFFFFFF;// i % 6;
   }
   PathSort pathsort;
-  for (int i = 0; i < 20; ++i) {
+  for (int i = 0; i < 1; ++i) {
     unsigned long long now = ticks_now();
     pathsort.sort(values, count);
     //std::sort(values, values + count);
-    printf("%llu ticks\n", ticks_now() - now);
+    //printf("%llu ticks\n", ticks_now() - now);
   }
 
-  /*
-  for (int i = 0; i < count; ++i) {
-    printf("%i\n", values[i]);
-  }*/
 
   _aligned_free(values);
   return 0;
