@@ -7,13 +7,32 @@
 #include "avx2sort.h"
 
 //---
-#define SORTED      0x80
-#define SWAP_MERGED 0x01
+#define SORTED            0x80
+#define MERGE_SORTED_BIT  0x80
+#define MERGE_SWAP        0x01
 
 //---
 #define ASC(a, b, c, d, e, f, g, h)                                    \
   (((h < 7) << 7) | ((g < 6) << 6) | ((f < 5) << 5) | ((e < 4) << 4) | \
       ((d < 3) << 3) | ((c < 2) << 2) | ((b < 1) << 1) | (a < 0))
+
+//---
+#define COEX_PERMUTE(vec, a, b, c, d, e, f, g, h, MASK){               \
+    __m256i permute_mask = _mm256_setr_epi32(a, b, c, d, e, f, g, h);  \
+    __m256i permuted = _mm256_permutevar8x32_epi32(vec, permute_mask); \
+    __m256i min = _mm256_min_epi32(permuted, vec);                     \
+    __m256i max = _mm256_max_epi32(permuted, vec);                     \
+    constexpr int blend_mask = MASK(a, b, c, d, e, f, g, h);           \
+    vec = _mm256_blend_epi32(min, max, blend_mask);}
+
+//---
+#define COEX_SHUFFLE(vec, a, b, c, d, e, f, g, h, MASK){               \
+    constexpr int shuffle_mask = _MM_SHUFFLE(d, c, b, a);              \
+    __m256i shuffled = _mm256_shuffle_epi32(vec, shuffle_mask);        \
+    __m256i min = _mm256_min_epi32(shuffled, vec);                     \
+    __m256i max = _mm256_max_epi32(shuffled, vec);                     \
+    constexpr int blend_mask = MASK(a, b, c, d, e, f, g, h);           \
+    vec = _mm256_blend_epi32(min, max, blend_mask);}
 
 //---
 #define COEX_SHUFFLE_WITH_INDICES(vec, idx, a, b, c, d, e, f, g, h, MASK){  \
@@ -49,6 +68,15 @@
   COEX_PERMUTE_WITH_INDICES(vec, IDX, 7, 6, 5, 4, 3, 2, 1, 0, ASC);                           \
   COEX_PERMUTE_WITH_INDICES(vec, IDX, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
   COEX_PERMUTE_WITH_INDICES(vec, IDX, 1, 0, 3, 2, 5, 4, 7, 6, ASC);}
+
+//---
+#define SORT_8(vec){                                                   \
+  COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ASC);                           \
+  COEX_SHUFFLE(vec, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
+  COEX_SHUFFLE(vec, 0, 2, 1, 3, 4, 6, 5, 7, ASC);                           \
+  COEX_PERMUTE(vec, 7, 6, 5, 4, 3, 2, 1, 0, ASC);                           \
+  COEX_SHUFFLE(vec, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
+  COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ASC);}
 
 //---
 PathSort::PathSort()
@@ -127,6 +155,30 @@ void PathSort::sort8(__m256i& array)
                                              _mm256_cmpgt_epi32(array,
                                                                 rotated_array)));
   if (comparison != SORTED) {
+    __m256i permutation = _permute_table_avx[comparison];
+    array =         _mm256_permutevar8x32_epi32(array,
+                                                permutation);
+    rotated_array = _mm256_permutevar8x32_epi32(array,
+                                                rotate_left);
+    comparison =    _mm256_movemask_ps(_mm256_castsi256_ps(
+                                       _mm256_cmpgt_epi32(array,
+                                                          rotated_array)));
+    if (comparison != SORTED) {
+      SORT_8(array);
+    }
+  }
+}
+
+//---
+void PathSort::sort8_adaptive(__m256i& array)
+{
+  __m256i rotate_left =   _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
+  __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
+                                                      rotate_left);
+  int comparison =        _mm256_movemask_ps(_mm256_castsi256_ps(
+                                             _mm256_cmpgt_epi32(array,
+                                                                rotated_array)));
+  if (comparison != SORTED) {
     int og_comparison = comparison;
     __m256i permutation = _permute_table_avx[comparison];
     array =         _mm256_permutevar8x32_epi32(array,
@@ -153,10 +205,10 @@ int PathSort::merge16(__m256i& a,
                                                    reverse);
   __m256i comparison = _mm256_cmpgt_epi32(a, reversed_b);
   int comparison_mask = _mm256_movemask_ps(_mm256_castsi256_ps(comparison));
-  if (comparison_mask & SORTED) {
+  if (!(comparison_mask & MERGE_SORTED_BIT)) {
     return comparison_mask;
   }
-  if (comparison_mask & SWAP_MERGED) {
+  if (comparison_mask & MERGE_SWAP) {
     __m256i t = a;
     a = b;
     b = t;
@@ -254,7 +306,7 @@ int main()
   const int count = 16;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
   for (int i = 0; i < count; ++i) {
-    values[i] = random.next() & 0xFFFFFFFF;// i % 6;
+    values[i] = random.next();// i % 6;
   }
   PathSort pathsort;
 
