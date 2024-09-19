@@ -7,7 +7,8 @@
 #include "avx2sort.h"
 
 //---
-#define SORTED 0x80
+#define SORTED      0x80
+#define SWAP_MERGED 0x01
 
 //---
 #define ASC(a, b, c, d, e, f, g, h)                                    \
@@ -125,43 +126,52 @@ void PathSort::sort8(__m256i& array)
   int comparison =        _mm256_movemask_ps(_mm256_castsi256_ps(
                                              _mm256_cmpgt_epi32(array,
                                                                 rotated_array)));
-  if (comparison == SORTED) {
-    return;
-  }
-  int og_comparison = comparison;
-  __m256i permutation = _permute_table_avx[comparison];
-  array =         _mm256_permutevar8x32_epi32(array,
-                                              permutation);
-  rotated_array = _mm256_permutevar8x32_epi32(array,
-                                              rotate_left);
-  comparison =    _mm256_movemask_ps(_mm256_castsi256_ps(
-                                     _mm256_cmpgt_epi32(array,
-                                                        rotated_array)));
   if (comparison != SORTED) {
-    SORT_8_IDX(array,
-               permutation);
-    _permute_table_avx[og_comparison] = permutation;
+    int og_comparison = comparison;
+    __m256i permutation = _permute_table_avx[comparison];
+    array =         _mm256_permutevar8x32_epi32(array,
+                                                permutation);
+    rotated_array = _mm256_permutevar8x32_epi32(array,
+                                                rotate_left);
+    comparison =    _mm256_movemask_ps(_mm256_castsi256_ps(
+                                       _mm256_cmpgt_epi32(array,
+                                                          rotated_array)));
+    if (comparison != SORTED) {
+      SORT_8_IDX(array,
+                 permutation);
+      _permute_table_avx[og_comparison] = permutation;
+    }
   }
 }
 
 //---
-void PathSort::merge16(__m256i& a,
-                       __m256i& b)
+int PathSort::merge16(__m256i& a,
+                      __m256i& b)
 {
-  __m256i sort0 = _mm256_permute2x128_si256(a, b, 0x20);
-  __m256i sort1 = _mm256_permute2x128_si256(a, b, 0x31);
-  sort8(sort0);
-  sort8(sort1);
-  __m256i sort2 = _mm256_blend_epi32(sort1, sort0, 0xF0);
-  sort8(sort2);
-  b = _mm256_permute2x128_si256(sort1, sort2, 0x31);
+  __m256i reverse =    _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+  __m256i reversed_b = _mm256_permutevar8x32_epi32(b,
+                                                   reverse);
+  __m256i comparison = _mm256_cmpgt_epi32(a, reversed_b);
+  int comparison_mask = _mm256_movemask_ps(_mm256_castsi256_ps(comparison));
+  if (comparison_mask & SORTED) {
+    return comparison_mask;
+  }
+  if (comparison_mask & SWAP_MERGED) {
+    __m256i t = a;
+    a = b;
+    b = t;
+    return comparison_mask;
+  }
+  b = _mm256_blendv_epi8(reversed_b, a, comparison);
+  a = _mm256_blendv_epi8(a, reversed_b, comparison);
+  sort8(a);
   sort8(b);
-  a = _mm256_permute2x128_si256(sort0, sort2, 0x20);
+  return comparison_mask;
 }
 
 //---
-void PathSort::sort(int* array,
-                    unsigned int count)
+void PathSort::sort_in_place(int* array,
+                             unsigned int count)
 {
   // Sort 8-wide in each batch.
   unsigned int batches = count >> 3;
@@ -172,13 +182,34 @@ void PathSort::sort(int* array,
                        batch);
   }
   // Merge pairs.
+  // This works by performing 16-wide merges and pushing the highest 8 into 'right'.
+  // 'Right' only increments if ALL of its elements get pushed at a time.
+  // It can be made in-place by simply saying, if 'left' gets pushed we're good. If 'right'
+  // gets fully pushed, we swap 'left' into 'right' and don't increment 'right.
   int level = 0;
   unsigned int merges = count >> (4 + level);
   while (merges > 0) {
-    unsigned int merge_size = 0x8 << level;
+    const unsigned int merge_size = 0x8 << level;
     for (unsigned int m = 0; m < merges; ++m) {
       __m256i* left = (__m256i*) & array[(m << (4 + level))];
       __m256i* right = (__m256i*) & array[((m << (4 + level)) + merge_size)];
+      __m256i* batch_left = left;
+      __m256i* batch_right = right;
+
+      __m256i A = _mm256_load_si256(batch_left);
+      __m256i B = _mm256_load_si256(batch_right);
+      merge16(A, B);
+      _mm256_store_si256(left++, A);
+      _mm256_store_si256(right, B);
+
+      while (batch_left < (batch_left + merge_size)) {
+        A = _mm256_load_si256(batch_left);
+        B = _mm256_load_si256(batch_right);
+        merge16(A, B);
+      }
+
+
+      /*
       __m256i* write = left;
       __m256i L = _mm256_load_si256(left);
       __m256i R = _mm256_load_si256(right);
@@ -195,7 +226,7 @@ void PathSort::sort(int* array,
         merge16(R, T);
         _mm256_store_si256(write++, R);
       }
-      _mm256_store_si256(write++, T);
+      _mm256_store_si256(write++, T);*/
     }
     merges = count >> (4 + (++level));
 
@@ -220,15 +251,27 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 64;
+  const int count = 16;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
   for (int i = 0; i < count; ++i) {
-    values[i] = count - i;// random.next() & 0xFFFFFFFF;// i % 6;
+    values[i] = random.next() & 0xFFFFFFFF;// i % 6;
   }
   PathSort pathsort;
+
+  __m256i a = _mm256_load_si256((__m256i*)&values[0]);
+  __m256i b = _mm256_load_si256((__m256i*)&values[8]);
+  pathsort.sort8(a);
+  pathsort.sort8(b);
+  pathsort.merge16(a, b);
+
+
+
+
+
+
   for (int i = 0; i < 1; ++i) {
     unsigned long long now = ticks_now();
-    pathsort.sort(values, count);
+    //pathsort.sort(values, count);
     //std::sort(values, values + count);
     //printf("%llu ticks\n", ticks_now() - now);
   }
