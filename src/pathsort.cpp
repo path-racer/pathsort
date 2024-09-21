@@ -203,7 +203,8 @@ int PathSort::merge16(__m256i& a,
   __m256i reverse =    _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0);
   __m256i reversed_b = _mm256_permutevar8x32_epi32(b,
                                                    reverse);
-  __m256i comparison = _mm256_cmpgt_epi32(a, reversed_b);
+  __m256i comparison = _mm256_xor_epi32(_mm256_cmpgt_epi32(reversed_b, a),
+                                        _mm256_set1_epi32(-1));
   int comparison_mask = _mm256_movemask_ps(_mm256_castsi256_ps(comparison));
   if (!(comparison_mask & MERGE_SORTED_BIT)) {
     return comparison_mask;
@@ -222,8 +223,8 @@ int PathSort::merge16(__m256i& a,
 }
 
 //---
-void PathSort::sort_in_place(int* array,
-                             unsigned int count)
+void PathSort::sort(int* array,
+                    unsigned int count)
 {
   // Sort 8-wide in each batch.
   unsigned int batches = count >> 3;
@@ -233,52 +234,41 @@ void PathSort::sort_in_place(int* array,
     _mm256_store_si256((__m256i*)&array[b << 3],
                        batch);
   }
-  // Merge pairs.
-  // This works by performing 16-wide merges and pushing the highest 8 into 'right'.
-  // 'Right' only increments if ALL of its elements get pushed at a time.
-  // It can be made in-place by simply saying, if 'left' gets pushed we're good. If 'right'
-  // gets fully pushed, we swap 'left' into 'right' and don't increment 'right.
+  // Merge pairs downward.
   int level = 0;
   unsigned int merges = count >> (4 + level);
   while (merges > 0) {
     const unsigned int merge_size = 0x8 << level;
+    const unsigned int batch_count = merge_size >> 3;
     for (unsigned int m = 0; m < merges; ++m) {
       __m256i* left = (__m256i*) & array[(m << (4 + level))];
       __m256i* right = (__m256i*) & array[((m << (4 + level)) + merge_size)];
       __m256i* batch_left = left;
       __m256i* batch_right = right;
-
       __m256i A = _mm256_load_si256(batch_left);
       __m256i B = _mm256_load_si256(batch_right);
       merge16(A, B);
-      _mm256_store_si256(left++, A);
-      _mm256_store_si256(right, B);
-
-      while (batch_left < (batch_left + merge_size)) {
-        A = _mm256_load_si256(batch_left);
-        B = _mm256_load_si256(batch_right);
+      __m256i R = B;
+      _mm256_store_si256(batch_left++, A);
+      _mm256_store_si256(batch_right++, B);
+      A = _mm256_load_si256(batch_left);
+      B = _mm256_load_si256(batch_right);
+      while (batch_left < (left + batch_count)) {
         merge16(A, B);
+        _mm256_store_si256(batch_right++, B);
+        if (merge16(A, R) & MERGE_SWAP) {
+          _mm256_store_si256(batch_left++, A);
+          A = _mm256_load_si256(batch_left);
+          _mm256_store_si256(batch_left, R);
+          R = _mm256_load_si256(++right);
+          B = _mm256_load_si256(batch_right);
+        } else {
+          _mm256_store_si256(batch_left++, A);
+          _mm256_store_si256(right, R);
+          A = _mm256_load_si256(batch_left);
+          B = _mm256_load_si256(batch_right);
+        }
       }
-
-
-      /*
-      __m256i* write = left;
-      __m256i L = _mm256_load_si256(left);
-      __m256i R = _mm256_load_si256(right);
-      merge16(L, R);
-      _mm256_store_si256(write++, L);
-      __m256i T = R;
-      unsigned int batches = merge_size >> 3;
-      for (int b = 1; b < batches; ++b) {
-        L = _mm256_load_si256(++left);
-        R = _mm256_load_si256(++right);
-        merge16(L, R);
-        merge16(L, T);
-        _mm256_store_si256(write++, L);
-        merge16(R, T);
-        _mm256_store_si256(write++, R);
-      }
-      _mm256_store_si256(write++, T);*/
     }
     merges = count >> (4 + (++level));
 
@@ -303,31 +293,95 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 16;
+  const int count = 64;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
+  
   for (int i = 0; i < count; ++i) {
-    values[i] = random.next();// i % 6;
+    values[i] = random.next() & 0x9;// i % 6;
   }
+
+  int v[64] =
+  {
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    8,
+    8,
+    8,
+    9,
+    9,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    8,
+    8,
+    8,
+    9,
+    9,
+    9,
+    9,
+    9,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    8,
+    8,
+    8,
+    8,
+    9,
+    9,
+    9,
+    9,
+    9,
+    0,
+    0,
+    0,
+    1,
+    1,
+    8,
+    8,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9
+  };
+
   PathSort pathsort;
-
-  __m256i a = _mm256_load_si256((__m256i*)&values[0]);
-  __m256i b = _mm256_load_si256((__m256i*)&values[8]);
-  pathsort.sort8(a);
-  pathsort.sort8(b);
-  pathsort.merge16(a, b);
-
-
-
-
-
-
   for (int i = 0; i < 1; ++i) {
     unsigned long long now = ticks_now();
-    //pathsort.sort(values, count);
+    pathsort.sort(v, count);
     //std::sort(values, values + count);
-    //printf("%llu ticks\n", ticks_now() - now);
+    printf("%llu ticks\n", ticks_now() - now);
   }
 
+  for (int i = 0; i < count - 1; ++i) {
+    if (values[i] > values[i + 1]) {
+      printf("FUCK\n");
+      return 0;
+    }
+  }
 
   _aligned_free(values);
   return 0;
