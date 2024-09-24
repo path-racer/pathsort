@@ -303,19 +303,19 @@ int main()
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
   
   for (int i = 0; i < count; ++i) {
-    values[i] = random.next() & 0x9;// i % 6;
+    values[i] = random.next();// i % 6;
   }
 
   PathSort pathsort;
   for (int i = 0; i < 1; ++i) {
     unsigned long long now = ticks_now();
-    pathsort.sort(v, count);
+    pathsort.sort(values, count);
     //std::sort(values, values + count);
     printf("%llu ticks\n", ticks_now() - now);
   }
 
   for (int i = 0; i < count - 1; ++i) {
-    if (v[i] > v[i + 1]) {
+    if (values[i] > values[i + 1]) {
       printf("FUCK\n");
       return 0;
     }
