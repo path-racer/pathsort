@@ -7,9 +7,11 @@
 #include "avx2sort.h"
 
 //---
-#define SORTED            0x80
-#define MERGE_SORTED_BIT  0x80
-#define MERGE_SWAP        0x01
+#define SORTED                0x80
+#define SWAPPED               0x01
+#define MERGE_SORTED          0x00
+#define MERGE_SWAPPED         0x01
+#define MERGE_NORMAL          0x02
 
 //---
 #define ASC(a, b, c, d, e, f, g, h)                                    \
@@ -196,6 +198,7 @@ void PathSort::sort8_adaptive(__m256i& array)
   }
 }
 
+
 //---
 int PathSort::merge16(__m256i& a,
                       __m256i& b)
@@ -203,23 +206,23 @@ int PathSort::merge16(__m256i& a,
   __m256i reverse =    _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0);
   __m256i reversed_b = _mm256_permutevar8x32_epi32(b,
                                                    reverse);
-  __m256i comparison = _mm256_xor_epi32(_mm256_cmpgt_epi32(reversed_b, a),
-                                        _mm256_set1_epi32(-1));
-  int comparison_mask = _mm256_movemask_ps(_mm256_castsi256_ps(comparison));
-  if (!(comparison_mask & MERGE_SORTED_BIT)) {
-    return comparison_mask;
-  }
-  if (comparison_mask & MERGE_SWAP) {
+  __m256i gt = _mm256_cmpgt_epi32(reversed_b, a);
+  __m256i eq = _mm256_cmpeq_epi32(reversed_b, a);
+  int gteq = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_or_si256(gt, eq)));
+  int lteq = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_xor_si256(gt, _mm256_set1_epi32(-1))));
+  if (gteq & SORTED) {
+    return MERGE_SORTED;
+  } else if (lteq & SWAPPED) {
     __m256i t = a;
     a = b;
     b = t;
-    return comparison_mask;
+    return MERGE_SWAPPED;
   }
-  b = _mm256_blendv_epi8(reversed_b, a, comparison);
-  a = _mm256_blendv_epi8(a, reversed_b, comparison);
+  b = _mm256_blendv_epi8(a, reversed_b, gt);
+  a = _mm256_blendv_epi8(reversed_b, a, gt);
   sort8(a);
   sort8(b);
-  return comparison_mask;
+  return MERGE_NORMAL;
 }
 
 //---
@@ -241,33 +244,36 @@ void PathSort::sort(int* array,
     const unsigned int merge_size = 0x8 << level;
     const unsigned int batch_count = merge_size >> 3;
     for (unsigned int m = 0; m < merges; ++m) {
-      __m256i* left = (__m256i*) & array[(m << (4 + level))];
-      __m256i* right = (__m256i*) & array[((m << (4 + level)) + merge_size)];
+      __m256i* left = (__m256i*)&array[(m << (4 + level))];
+      __m256i* right = (__m256i*)&array[((m << (4 + level)) + merge_size)];
       __m256i* batch_left = left;
       __m256i* batch_right = right;
-      __m256i A = _mm256_load_si256(batch_left);
-      __m256i B = _mm256_load_si256(batch_right);
-      merge16(A, B);
-      __m256i R = B;
-      _mm256_store_si256(batch_left++, A);
-      _mm256_store_si256(batch_right++, B);
-      A = _mm256_load_si256(batch_left);
-      B = _mm256_load_si256(batch_right);
+      __m256i L = _mm256_load_si256(batch_left);
+      __m256i R = _mm256_load_si256(batch_right);
+      merge16(L, R);
+      __m256i T = R;
+      _mm256_store_si256(batch_left++, L);
+      _mm256_store_si256(batch_right++, R);
       while (batch_left < (left + batch_count)) {
-        merge16(A, B);
-        _mm256_store_si256(batch_right++, B);
-        if (merge16(A, R) & MERGE_SWAP) {
-          _mm256_store_si256(batch_left++, A);
-          A = _mm256_load_si256(batch_left);
-          _mm256_store_si256(batch_left, R);
-          R = _mm256_load_si256(++right);
-          B = _mm256_load_si256(batch_right);
-        } else {
-          _mm256_store_si256(batch_left++, A);
-          _mm256_store_si256(right, R);
-          A = _mm256_load_si256(batch_left);
-          B = _mm256_load_si256(batch_right);
+        L = _mm256_load_si256(batch_left);
+        R = _mm256_load_si256(batch_right);
+        int lr = merge16(L, R);
+        int lt = merge16(L, T);
+        _mm256_store_si256(batch_left++, L);
+        _mm256_store_si256(batch_right++, R);
+        __m256i TT = _mm256_load_si256(right + 1);
+        int m = merge16(T, TT);
+        __m256i A = T;
+        __m256i* n = right;
+        // Merge up to keep 'right array' sorted, and lowest values in T.
+        while (m != MERGE_SORTED) {
+          _mm256_store_si256(n, T);
+          _mm256_store_si256(n + 1, TT);
+          T = TT;
+          TT = _mm256_load_si256((++n) + 1);
+          m = merge16(T, TT);
         }
+        T = A;
       }
     }
     merges = count >> (4 + (++level));
@@ -293,80 +299,12 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 64;
+  const int count = 128;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
   
   for (int i = 0; i < count; ++i) {
     values[i] = random.next() & 0x9;// i % 6;
   }
-
-  int v[64] =
-  {
-    0,
-    0,
-    0,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    8,
-    8,
-    8,
-    9,
-    9,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    8,
-    8,
-    8,
-    9,
-    9,
-    9,
-    9,
-    9,
-    0,
-    0,
-    0,
-    1,
-    1,
-    1,
-    1,
-    8,
-    8,
-    8,
-    8,
-    9,
-    9,
-    9,
-    9,
-    9,
-    0,
-    0,
-    0,
-    1,
-    1,
-    8,
-    8,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9
-  };
 
   PathSort pathsort;
   for (int i = 0; i < 1; ++i) {
@@ -377,7 +315,7 @@ int main()
   }
 
   for (int i = 0; i < count - 1; ++i) {
-    if (values[i] > values[i + 1]) {
+    if (v[i] > v[i + 1]) {
       printf("FUCK\n");
       return 0;
     }
