@@ -246,6 +246,7 @@ void PathSort::sort(int* array,
     for (unsigned int m = 0; m < merges; ++m) {
       __m256i* left = (__m256i*)&array[(m << (4 + level))];
       __m256i* right = (__m256i*)&array[((m << (4 + level)) + merge_size)];
+      __m256i* end = right + batch_count;
       __m256i* batch_left = left;
       __m256i* batch_right = right;
       __m256i L = _mm256_load_si256(batch_left);
@@ -254,7 +255,7 @@ void PathSort::sort(int* array,
       __m256i T = R;
       _mm256_store_si256(batch_left++, L);
       _mm256_store_si256(batch_right++, R);
-      while (batch_left < (left + batch_count)) {
+      while (batch_left < right) {
         L = _mm256_load_si256(batch_left);
         R = _mm256_load_si256(batch_right);
         int lr = merge16(L, R);
@@ -268,22 +269,26 @@ void PathSort::sort(int* array,
         // Merge up to keep 'right array' sorted, and lowest values in T.
         while (m != MERGE_SORTED) {
           _mm256_store_si256(n, T);
-          _mm256_store_si256(n + 1, TT);
+          _mm256_store_si256(++n, TT);
+          if ((n + 1) == end) {
+            break;
+          }
           T = TT;
-          TT = _mm256_load_si256((++n) + 1);
+          TT = _mm256_load_si256(n + 1);
           m = merge16(T, TT);
         }
         T = A;
       }
+      _mm256_store_si256(right, T);
     }
     merges = count >> (4 + (++level));
 
 
-
+    /*
     for (int i = 0; i < count; ++i) {
       printf("%i\n", array[i]);
     }
-    printf("---\n");
+    printf("---\n");*/
   }
 }
 
@@ -299,18 +304,17 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 128;
+  const int count = 2048;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
-  
-  for (int i = 0; i < count; ++i) {
-    values[i] = random.next();// i % 6;
-  }
 
   PathSort pathsort;
-  for (int i = 0; i < 1; ++i) {
+  for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < count; ++i) {
+      values[i] = random.next();// i % 6;
+    }
     unsigned long long now = ticks_now();
-    pathsort.sort(values, count);
-    //std::sort(values, values + count);
+    //pathsort.sort(values, count);
+    std::sort(values, values + count);
     printf("%llu ticks\n", ticks_now() - now);
   }
 
