@@ -250,7 +250,6 @@ void PathSort::sort(int* array,
       while (left < right) {
         __m256i L = _mm256_load_si256(left);
         __m256i R = _mm256_load_si256(right);
-        merge16(L, R);
         if (merge16(L, R) != MERGE_SORTED) {
           _mm256_store_si256(left, L);
           _mm256_store_si256(right, R);
