@@ -11,6 +11,7 @@ struct PathSort
   unsigned int _permute_table[256];
   char         _permute_table_small[768];
   __m256i      _permute_table_avx[256];
+  __m256i*     _array;
 
   //---
   PathSort();
@@ -19,6 +20,9 @@ struct PathSort
   void sort8_adaptive(__m256i& array);
   int merge16(__m256i& a,
               __m256i& b);
+  void merge(unsigned int r,
+             unsigned int level,
+             unsigned int* level_counts);
   void sort(int* array,
             unsigned int count);
 };
