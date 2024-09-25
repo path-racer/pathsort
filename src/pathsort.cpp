@@ -238,7 +238,7 @@ void PathSort::sort(int* array,
         bool sorted = left_scalar[batch_scalars - 1] < right_scalar[0];
         bool swapped = right_scalar[batch_scalars - 1] < left_scalar[0];
         if (!sorted && !swapped) {
-          while (left < right) {
+          for (unsigned int i = 0; i < batch_registers; ++i) {
             __m256i L = _mm256_load_si256(left);
             __m256i R = _mm256_load_si256(right);
             if (merge16(L, R) != MERGE_SORTED) {
