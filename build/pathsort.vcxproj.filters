@@ -18,5 +18,8 @@
     <ClInclude Include="..\src\avx2sort.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\simd_bitonic.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

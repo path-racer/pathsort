@@ -5,6 +5,8 @@
 #include <algorithm>
 #include "src/pathsort.h"
 #include "avx2sort.h"
+#define __SIMD_BITONIC_IMPLEMENTATION__
+#include "simd_bitonic.h"
 
 //---
 #define SORTED                0x80
@@ -229,10 +231,12 @@ int PathSort::merge16(__m256i& a,
 void PathSort::sort(int* array,
                     unsigned int count)
 {
+
+
   // Sort 8-wide in each batch.
   unsigned int batches = count >> 3;
   for (unsigned int b = 0; b < batches; ++b) {
-    __m256i batch = _mm256_load_si256((__m256i*) & array[b << 3]);
+    __m256i batch = _mm256_load_si256((__m256i*)&array[b << 3]);
     sort8(batch);
     _mm256_store_si256((__m256i*)&array[b << 3],
                        batch);
@@ -248,7 +252,7 @@ void PathSort::sort(int* array,
       __m256i* right = (__m256i*)&array[((m << (4 + level)) + merge_size)];
       __m256i* end = right + batch_count;
       while (left < right) {
-        __m256i L = _mm256_load_si256(left);
+        __m256i L = _mm256_load_si256(left++);
         __m256i R = _mm256_load_si256(right);
         if (merge16(L, R) != MERGE_SORTED) {
           _mm256_store_si256(left, L);
@@ -267,7 +271,6 @@ void PathSort::sort(int* array,
             }
           }
         }
-        ++left;
       }
     }
     merges = count >> (4 + (++level));
@@ -302,17 +305,19 @@ int main()
       values[i] = random.next() & 0xFFFFFFFF;
     }
     unsigned long long now = ticks_now();
-    pathsort.sort(values, count);
+    //pathsort.sort(values, count);
     //std::sort(values, values + count);
+    simd_merge_sort((float*)values, count);
     printf("%llu ticks\n", ticks_now() - now);
   }
 
+  /*
   for (int i = 0; i < count - 1; ++i) {
     if (values[i] > values[i + 1]) {
       printf("FUCK\n");
       return 0;
     }
-  }
+  }*/
 
   _aligned_free(values);
   return 0;

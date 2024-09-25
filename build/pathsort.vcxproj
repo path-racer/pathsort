@@ -136,6 +136,7 @@
   <ItemGroup>
     <ClInclude Include="..\src\avx2sort.h" />
     <ClInclude Include="..\src\pathsort.h" />
+    <ClInclude Include="..\src\simd_bitonic.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
