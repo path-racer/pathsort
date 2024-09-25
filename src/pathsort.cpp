@@ -247,29 +247,39 @@ void PathSort::sort(int* array,
       __m256i* left = (__m256i*)&array[(m << (4 + level))];
       __m256i* right = (__m256i*)&array[((m << (4 + level)) + merge_size)];
       __m256i* end = right + batch_count;
-      __m256i R = _mm256_load_si256(right);
-      while (left < right) {
-        __m256i L = _mm256_load_si256(left);
-        __m256i R = _mm256_load_si256(right);
-        if (merge16(L, R) != MERGE_SORTED) {
-          _mm256_store_si256(left, L);
-          _mm256_store_si256(right, R);
-          if ((right + 1) < end) {
-            __m256i* n = right;
-            __m256i T = _mm256_load_si256(n + 1);
-            while (merge16(R, T) != MERGE_SORTED) {
-              _mm256_store_si256(n, R);
-              _mm256_store_si256(++n, T);
-              if ((n + 1) == end) {
-                break;
-              }
-              R = T;
-              T = _mm256_load_si256(n + 1);
-            }
+      __m256i* batch_left = left;
+      __m256i* batch_right = right;
+      __m256i L = _mm256_load_si256(batch_left);
+      __m256i R = _mm256_load_si256(batch_right);
+      merge16(L, R);
+      __m256i T = R;
+      _mm256_store_si256(batch_left++, L);
+      _mm256_store_si256(batch_right++, R);
+      while (batch_left < right) {
+        L = _mm256_load_si256(batch_left);
+        R = _mm256_load_si256(batch_right);
+        int lr = merge16(L, R);
+        int lt = merge16(L, T);
+        _mm256_store_si256(batch_left++, L);
+        _mm256_store_si256(batch_right++, R);
+        __m256i TT = _mm256_load_si256(right + 1);
+        int m = merge16(T, TT);
+        __m256i A = T;
+        __m256i* n = right;
+        // Merge up to keep 'right array' sorted, and lowest values in T.
+        while (m != MERGE_SORTED) {
+          _mm256_store_si256(n, T);
+          _mm256_store_si256(++n, TT);
+          if ((n + 1) == end) {
+            break;
           }
+          T = TT;
+          TT = _mm256_load_si256(n + 1);
+          m = merge16(T, TT);
         }
-        ++left;
+        T = A;
       }
+      _mm256_store_si256(right, T);
     }
     merges = count >> (4 + (++level));
 
