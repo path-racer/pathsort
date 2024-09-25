@@ -306,8 +306,9 @@ int main()
     }
     unsigned long long now = ticks_now();
     //pathsort.sort(values, count);
-    //std::sort(values, values + count);
-    simd_merge_sort((float*)values, count);
+    std::sort(values, values + count);
+    //simd_merge_sort((float*)values, count);
+    //avx2::quicksort(values, count);
     printf("%llu ticks\n", ticks_now() - now);
   }
 
