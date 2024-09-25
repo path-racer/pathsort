@@ -152,25 +152,7 @@ PathSort::PathSort()
 //---
 void PathSort::sort8(__m256i& array)
 {
-  __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
-  __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
-    rotate_left);
-  int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
-    _mm256_cmpgt_epi32(array,
-      rotated_array)));
-  if (comparison != SORTED) {
-    __m256i permutation = _permute_table_avx[comparison];
-    array = _mm256_permutevar8x32_epi32(array,
-      permutation);
-    rotated_array = _mm256_permutevar8x32_epi32(array,
-      rotate_left);
-    comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
-      _mm256_cmpgt_epi32(array,
-        rotated_array)));
-    if (comparison != SORTED) {
-      SORT_8(array);
-    }
-  }
+  SORT_8(array);
 }
 
 //---
@@ -178,7 +160,7 @@ void PathSort::sort8_adaptive(__m256i& array)
 {
   __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
   __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
-    rotate_left);
+                                                      rotate_left);
   int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
     _mm256_cmpgt_epi32(array,
       rotated_array)));
@@ -186,15 +168,15 @@ void PathSort::sort8_adaptive(__m256i& array)
     int og_comparison = comparison;
     __m256i permutation = _permute_table_avx[comparison];
     array = _mm256_permutevar8x32_epi32(array,
-      permutation);
+                                        permutation);
     rotated_array = _mm256_permutevar8x32_epi32(array,
-      rotate_left);
+                                                rotate_left);
     comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
-      _mm256_cmpgt_epi32(array,
-        rotated_array)));
+                                    _mm256_cmpgt_epi32(array,
+                                                       rotated_array)));
     if (comparison != SORTED) {
       SORT_8_IDX(array,
-        permutation);
+                 permutation);
       _permute_table_avx[og_comparison] = permutation;
     }
   }
@@ -202,7 +184,7 @@ void PathSort::sort8_adaptive(__m256i& array)
 
 //---
 int PathSort::merge16(__m256i& a,
-  __m256i& b)
+                      __m256i& b)
 {
   __m256i reverse = _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0);
   __m256i reversed_b = _mm256_permutevar8x32_epi32(b,
@@ -222,46 +204,9 @@ int PathSort::merge16(__m256i& a,
   }
   b = _mm256_blendv_epi8(a, reversed_b, gt);
   a = _mm256_blendv_epi8(reversed_b, a, gt);
-  sort8(a);
-  sort8(b);
+  SORT_8(a);
+  SORT_8(b);
   return MERGE_NORMAL;
-}
-
-//---
-void PathSort::merge(unsigned int r,
-                     unsigned int level,
-                     unsigned int* level_counts)
-{
-  const unsigned int batch_registers = 0x1 << (level - 1);
-
-  __m256i* left = &_array[(r >> level) << level];
-  __m256i* right = left + batch_registers;
-  __m256i* end = right + batch_registers;
-  while (left < right) {
-    __m256i L = _mm256_load_si256(left);
-    __m256i R = _mm256_load_si256(right);
-    if (merge16(L, R) != MERGE_SORTED) {
-      _mm256_store_si256(left, L);
-      _mm256_store_si256(right, R);
-      if ((right + 1) < end) {
-        __m256i* n = right;
-        __m256i T = _mm256_load_si256(n + 1);
-        while (merge16(R, T) != MERGE_SORTED) {
-          _mm256_store_si256(n, R);
-          _mm256_store_si256(++n, T);
-          if ((n + 1) == end) {
-            break;
-          }
-          R = T;
-          T = _mm256_load_si256(n + 1);
-        }
-      }
-    }
-    ++left;
-  }
-  if (!(++level_counts[level] & 0x1)) {
-    merge(r, level + 1, level_counts);
-  }
 }
 
 //---
@@ -273,11 +218,60 @@ void PathSort::sort(int* array,
   unsigned int registers = count >> 3;
   for (unsigned int r = 0; r < registers; ++r) {
     __m256i reg = _mm256_load_si256(&_array[r]);
-    sort8(reg);
-    _mm256_store_si256(&_array[r],
-                       reg);
+    SORT_8(reg);
+    _mm256_store_si256(&_array[r], reg);
     if (!(++level_counts[0] & 0x1)) {
-      merge(r, 1, level_counts);
+      unsigned int level = 1;
+      while (true) {
+        const unsigned int batch_registers = 0x1 << (level - 1);
+        __m256i* left = &_array[(r >> level) << level];
+        __m256i* right = left + batch_registers;
+        __m256i* end = right + batch_registers;
+
+        // Prepass (improves reverse ordered).
+        /*
+        {
+          __m256i* l = left;
+          __m256i* r = right;
+          for (unsigned int m = 0; m < batch_registers; ++m) {
+            __m256i L = _mm256_load_si256(l);
+            __m256i R = _mm256_load_si256(r);
+            merge16(L, R);
+            _mm256_store_si256(l++, L);
+            _mm256_store_si256(r++, R);
+          }
+        }*/
+
+        while (left < right) {
+          __m256i L = _mm256_load_si256(left);
+          __m256i R = _mm256_load_si256(right);
+          if (merge16(L, R) != MERGE_SORTED) {
+            _mm256_store_si256(left, L);
+            _mm256_store_si256(right, R);
+            if ((right + 1) < end) {
+              __m256i* n = right;
+              __m256i T = _mm256_load_si256(n + 1);
+              while (merge16(R, T) != MERGE_SORTED) {
+                _mm256_store_si256(n, R);
+                _mm256_store_si256(++n, T);
+                if ((n + 1) == end) {
+                  break;
+                }
+                R = T;
+                T = _mm256_load_si256(n + 1);
+              }
+            }
+          }
+          ++left;
+        }
+
+
+        if (!(++level_counts[level] & 0x1)) {
+          ++level;
+        } else {
+          break;
+        }
+      }
     }
   }
 }
@@ -300,7 +294,7 @@ int main()
   PathSort pathsort;
   for (int i = 0; i < 10; ++i) {
     for (int i = 0; i < count; ++i) {
-      values[i] = random.next() & 0xFFFFFFFF;
+      values[i] = count - i;// random.next() & 0xFFFFFFFF;
     }
     unsigned long long now = ticks_now();
     pathsort.sort(values, count);

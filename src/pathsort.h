@@ -20,9 +20,6 @@ struct PathSort
   void sort8_adaptive(__m256i& array);
   int merge16(__m256i& a,
               __m256i& b);
-  void merge(unsigned int r,
-             unsigned int level,
-             unsigned int* level_counts);
   void sort(int* array,
             unsigned int count);
 };
