@@ -16,7 +16,6 @@ struct PathSort
   //---
   PathSort();
   ~PathSort() {}
-  void sort8(__m256i& array);
   void sort8_adaptive(__m256i& array);
   int merge16(__m256i& a,
               __m256i& b);

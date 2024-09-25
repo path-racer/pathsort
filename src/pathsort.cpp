@@ -83,6 +83,21 @@
   COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ASC);}
 
 //---
+#define SORT_ALREADY_BITONIC(A){\
+  __m256i p = _mm256_permute2x128_si256(A, A, 0x1); \
+  __m256i _min = _mm256_min_epi32(A, p); \
+  __m256i _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_min, _max, 0xF0); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(1, 0, 3, 2)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_min, _max, 0xCC); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(2, 3, 0, 1)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_min, _max, 0xAA);}
+
+//---
 PathSort::PathSort()
 {
   // Generate original LUT of comparison mask -> permutation indices (1KB).
@@ -150,20 +165,14 @@ PathSort::PathSort()
 }
 
 //---
-void PathSort::sort8(__m256i& array)
-{
-  SORT_8(array);
-}
-
-//---
 void PathSort::sort8_adaptive(__m256i& array)
 {
   __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
   __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
                                                       rotate_left);
   int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
-    _mm256_cmpgt_epi32(array,
-      rotated_array)));
+                                      _mm256_cmpgt_epi32(array,
+                                                          rotated_array)));
   if (comparison != SORTED) {
     int og_comparison = comparison;
     __m256i permutation = _permute_table_avx[comparison];
@@ -181,31 +190,27 @@ void PathSort::sort8_adaptive(__m256i& array)
     }
   }
 }
-
 //---
 int PathSort::merge16(__m256i& a,
                       __m256i& b)
 {
-  __m256i reverse = _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0);
-  __m256i reversed_b = _mm256_permutevar8x32_epi32(b,
-    reverse);
-  __m256i gt = _mm256_cmpgt_epi32(reversed_b, a);
-  __m256i eq = _mm256_cmpeq_epi32(reversed_b, a);
-  int gteq = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_or_si256(gt, eq)));
-  int lteq = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_xor_si256(gt, _mm256_set1_epi32(-1))));
-  if (gteq & SORTED) {
+  __m256i reversed_b = _mm256_permutevar8x32_epi32(b, _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0));
+  __m256i min = _mm256_min_epi32(a, reversed_b);
+  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(a, min)));
+  if (ordered == 0xFF) {
     return MERGE_SORTED;
   }
-  else if (lteq & SWAPPED) {
+  int swapped = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(reversed_b, min)));
+  if (swapped == 0xFF) {
     __m256i t = a;
     a = b;
     b = t;
     return MERGE_SWAPPED;
   }
-  b = _mm256_blendv_epi8(a, reversed_b, gt);
-  a = _mm256_blendv_epi8(reversed_b, a, gt);
-  SORT_8(a);
-  SORT_8(b);
+  b = _mm256_max_epi32(a, reversed_b);
+  a = min;
+  SORT_ALREADY_BITONIC(a);
+  SORT_ALREADY_BITONIC(b);
   return MERGE_NORMAL;
 }
 
@@ -224,48 +229,45 @@ void PathSort::sort(int* array,
       unsigned int level = 1;
       while (true) {
         const unsigned int batch_registers = 0x1 << (level - 1);
+        const unsigned int batch_scalars = 0x8 << (level - 1);
         __m256i* left = &_array[(r >> level) << level];
         __m256i* right = left + batch_registers;
         __m256i* end = right + batch_registers;
-
-        // Prepass (improves reverse ordered).
-        /*
-        {
-          __m256i* l = left;
-          __m256i* r = right;
-          for (unsigned int m = 0; m < batch_registers; ++m) {
-            __m256i L = _mm256_load_si256(l);
-            __m256i R = _mm256_load_si256(r);
-            merge16(L, R);
-            _mm256_store_si256(l++, L);
-            _mm256_store_si256(r++, R);
-          }
-        }*/
-
-        while (left < right) {
-          __m256i L = _mm256_load_si256(left);
-          __m256i R = _mm256_load_si256(right);
-          if (merge16(L, R) != MERGE_SORTED) {
-            _mm256_store_si256(left, L);
-            _mm256_store_si256(right, R);
-            if ((right + 1) < end) {
-              __m256i* n = right;
-              __m256i T = _mm256_load_si256(n + 1);
-              while (merge16(R, T) != MERGE_SORTED) {
-                _mm256_store_si256(n, R);
-                _mm256_store_si256(++n, T);
-                if ((n + 1) == end) {
-                  break;
+        int* left_scalar = (int*)left;
+        int* right_scalar = (int*)right;
+        bool sorted = left_scalar[batch_scalars - 1] < right_scalar[0];
+        bool swapped = right_scalar[batch_scalars - 1] < left_scalar[0];
+        if (!sorted && !swapped) {
+          while (left < right) {
+            __m256i L = _mm256_load_si256(left);
+            __m256i R = _mm256_load_si256(right);
+            if (merge16(L, R) != MERGE_SORTED) {
+              _mm256_store_si256(left, L);
+              _mm256_store_si256(right, R);
+              if ((right + 1) < end) {
+                __m256i* n = right;
+                __m256i T = _mm256_load_si256(n + 1);
+                while (merge16(R, T) != MERGE_SORTED) {
+                  _mm256_store_si256(n, R);
+                  _mm256_store_si256(++n, T);
+                  if ((n + 1) == end) {
+                    break;
+                  }
+                  R = T;
+                  T = _mm256_load_si256(n + 1);
                 }
-                R = T;
-                T = _mm256_load_si256(n + 1);
               }
             }
+            ++left;
           }
-          ++left;
+        } else if (swapped) {
+          for (unsigned int m = 0; m < batch_registers; ++m) {
+            __m256i L = _mm256_load_si256(left);
+            __m256i R = _mm256_load_si256(right);
+            _mm256_store_si256(left++, R);
+            _mm256_store_si256(right++, L);
+          }
         }
-
-
         if (!(++level_counts[level] & 0x1)) {
           ++level;
         } else {
@@ -294,7 +296,7 @@ int main()
   PathSort pathsort;
   for (int i = 0; i < 10; ++i) {
     for (int i = 0; i < count; ++i) {
-      values[i] = count - i;// random.next() & 0xFFFFFFFF;
+      values[i] = random.next() & 0xFFFFFFFF;
     }
     unsigned long long now = ticks_now();
     pathsort.sort(values, count);
