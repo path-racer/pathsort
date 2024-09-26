@@ -232,6 +232,12 @@ void PathSort::sort(int* array,
     if (!(++level_counts[0] & 0x1)) {
       unsigned int level = 1;
       while (true) {
+        if (level == 3) {
+          for (int i = 0; i < count; ++i) {
+            printf("%u\n", array[i]);
+          }
+          printf("-------\n");
+        }
         const unsigned int batch_registers = 0x1 << (level - 1);
         const unsigned int batch_scalars = 0x8 << (level - 1);
         __m256i* left = &_array[(r >> level) << level];
@@ -242,25 +248,34 @@ void PathSort::sort(int* array,
         bool sorted = left_scalar[batch_scalars - 1] < right_scalar[0];
         bool swapped = right_scalar[batch_scalars - 1] < left_scalar[0];
         if (!sorted && !swapped) {
+          __m256i* housing = right + 1;
+          unsigned int free_houses = 8;
           for (unsigned int i = 0; i < batch_registers; ++i) {
             __m256i L = _mm256_load_si256(left);
             __m256i R = _mm256_load_si256(right);
-            if (merge16(L, R) != MERGE_SORTED) {
-              _mm256_store_si256(left, L);
-              _mm256_store_si256(right, R);
-              if ((right + 1) < end) {
-                __m256i* n = right;
-                __m256i T = _mm256_load_si256(n + 1);
-                while (merge16(R, T) != MERGE_SORTED) {
-                  _mm256_store_si256(n, R);
-                  _mm256_store_si256(++n, T);
-                  if ((n + 1) == end) {
+            int immigrants = merge16(L, R);
+            _mm256_store_si256(left, L);
+            _mm256_store_si256(right, R);
+            if (housing < end) {
+              if (immigrants > free_houses) {
+                // Merge housing up fully sorted, then merge right with housing.
+                while ((housing + 1) < end) {
+                  L = _mm256_load_si256(housing);
+                  R = _mm256_load_si256(housing + 1);
+                  if (merge16(L, R) == MERGE_SORTED) {
                     break;
                   }
-                  R = T;
-                  T = _mm256_load_si256(n + 1);
+                  _mm256_store_si256(housing, L);
+                  _mm256_store_si256(housing + 1, R);
+                  ++housing;
                 }
+                housing = right + 1;
+                free_houses = 8;
               }
+              __m256i H = _mm256_load_si256(housing);
+              free_houses -= merge16(R, H);
+              _mm256_store_si256(right, R);
+              _mm256_store_si256(housing, H);
             }
             ++left;
           }
@@ -294,16 +309,85 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 65536;
+  const int count = 64;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
 
+  int v[64] =
+  {
+    1,
+    1,
+    8,
+    9,
+    0,
+    8,
+    9,
+    1,
+    9,
+    1,
+    1,
+    1,
+    8,
+    9,
+    1,
+    9,
+    8,
+    8,
+    8,
+    1,
+    0,
+    1,
+    9,
+    8,
+    0,
+    8,
+    1,
+    8,
+    1,
+    8,
+    8,
+    0,
+    9,
+    0,
+    0,
+    1,
+    0,
+    9,
+    0,
+    0,
+    9,
+    1,
+    0,
+    0,
+    8,
+    8,
+    9,
+    0,
+    8,
+    1,
+    8,
+    9,
+    1,
+    0,
+    1,
+    9,
+    8,
+    1,
+    1,
+    1,
+    0,
+    1,
+    8,
+    0
+  };
+
   PathSort pathsort;
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      values[i] = random.next() & 0xFFFFFFFF;
+      values[i] = random.next() & 0x9;//0xFFFFFFFF;
+      //printf("%u\n", values[i]);
     }
     unsigned long long now = ticks_now();
-    pathsort.sort(values, count);
+    pathsort.sort(v, count);
     //std::sort(values, values + count);
     //simd_merge_sort((float*)values, count);
     //avx2::quicksort(values, count);
@@ -311,13 +395,11 @@ int main()
   }
 
   for (int i = 0; i < count - 1; ++i) {
-    if (values[i] > values[i + 1]) {
+    printf("%u\n", v[i]);
+    if (v[i] > v[i + 1]) {
       printf("FUCK\n");
 
-      for (int i = 0; i < count; ++i) {
-        printf("%i\n", values[i]);
-      }
-      return 0;
+//      return 0;
     }
   }
 
