@@ -232,51 +232,45 @@ void PathSort::sort(int* array,
     if (!(++level_counts[0] & 0x1)) {
       unsigned int level = 1;
       while (true) {
-        if (level == 3) {
-          for (int i = 0; i < count; ++i) {
-            printf("%u\n", array[i]);
-          }
-          printf("-------\n");
-        }
         const unsigned int batch_registers = 0x1 << (level - 1);
         const unsigned int batch_scalars = 0x8 << (level - 1);
         __m256i* left = &_array[(r >> level) << level];
         __m256i* right = left + batch_registers;
+        if (level == 1) {
+          merge16(*left, *right);
+          if (!(++level_counts[level] & 0x1)) {
+            ++level;
+          } else {
+            break;
+          }
+          continue;
+        }
         __m256i* end = right + batch_registers;
         int* left_scalar = (int*)left;
         int* right_scalar = (int*)right;
         bool sorted = left_scalar[batch_scalars - 1] < right_scalar[0];
         bool swapped = right_scalar[batch_scalars - 1] < left_scalar[0];
         if (!sorted && !swapped) {
-          __m256i* housing = right + 1;
-          unsigned int free_houses = 8;
           for (unsigned int i = 0; i < batch_registers; ++i) {
             __m256i L = _mm256_load_si256(left);
             __m256i R = _mm256_load_si256(right);
-            int immigrants = merge16(L, R);
-            _mm256_store_si256(left, L);
-            _mm256_store_si256(right, R);
-            if (housing < end) {
-              if (immigrants > free_houses) {
-                // Merge housing up fully sorted, then merge right with housing.
-                while ((housing + 1) < end) {
-                  L = _mm256_load_si256(housing);
-                  R = _mm256_load_si256(housing + 1);
-                  if (merge16(L, R) == MERGE_SORTED) {
-                    break;
-                  }
-                  _mm256_store_si256(housing, L);
-                  _mm256_store_si256(housing + 1, R);
-                  ++housing;
-                }
-                housing = right + 1;
-                free_houses = 8;
-              }
-              R = _mm256_load_si256(right);
-              __m256i H = _mm256_load_si256(housing);
-              free_houses -= merge16(R, H);
+            if (merge16(L, R) > 0) {
+              _mm256_store_si256(left, L);
               _mm256_store_si256(right, R);
-              _mm256_store_si256(housing, H);
+              __m256i* n = right;
+              __m256i K = R;
+              __m256i N = _mm256_load_si256(right + 1);
+              int m = merge16(K, N);
+              while (m != MERGE_SORTED) {
+                _mm256_store_si256(n, K);
+                _mm256_store_si256(++n, N);
+                if ((n + 1) == end) {
+                  break;
+                }
+                K = N;
+                N = _mm256_load_si256(n + 1);
+                m = merge16(K, N);
+              }
             }
             ++left;
           }
@@ -310,85 +304,18 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 64;
+  const int count = 65536;
   int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
-
-  int v[64] =
-  {
-    1,
-    1,
-    8,
-    9,
-    0,
-    8,
-    9,
-    1,
-    9,
-    1,
-    1,
-    1,
-    8,
-    9,
-    1,
-    9,
-    8,
-    8,
-    8,
-    1,
-    0,
-    1,
-    9,
-    8,
-    0,
-    8,
-    1,
-    8,
-    1,
-    8,
-    8,
-    0,
-    9,
-    0,
-    0,
-    1,
-    0,
-    9,
-    0,
-    0,
-    9,
-    1,
-    0,
-    0,
-    8,
-    8,
-    9,
-    0,
-    8,
-    1,
-    8,
-    9,
-    1,
-    0,
-    1,
-    9,
-    8,
-    1,
-    1,
-    1,
-    0,
-    1,
-    8,
-    0
-  };
-
   PathSort pathsort;
+
+
   for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      values[i] = random.next() & 0x9;//0xFFFFFFFF;
-      //printf("%u\n", values[i]);
+      values[i] = random.next() & 0xFFFFFFFF;
+ //     printf("%u\n", values[i]);
     }
     unsigned long long now = ticks_now();
-    pathsort.sort(v, count);
+    pathsort.sort(values, count);
     //std::sort(values, values + count);
     //simd_merge_sort((float*)values, count);
     //avx2::quicksort(values, count);
@@ -396,11 +323,11 @@ int main()
   }
 
   for (int i = 0; i < count - 1; ++i) {
-    printf("%u\n", v[i]);
-    if (v[i] > v[i + 1]) {
+    // printf("%u\n", values[i]);
+    if (values[i] > values[i + 1]) {
       printf("FUCK\n");
 
-//      return 0;
+      //      return 0;
     }
   }
 
