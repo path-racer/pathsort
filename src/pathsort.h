@@ -1,8 +1,5 @@
 #pragma once
 #include <immintrin.h>
-#ifdef __clang__
-#include <avxintrin.h>
-#endif
 
 //---
 struct PathSort

@@ -1,4 +1,11 @@
-﻿#include <stdio.h>
+﻿#ifdef _MSC_VER
+#define _POPCNT(A) __popcnt(A)
+#else
+#include <avxintrin.h>
+#define _POPCNT(A) __builtin_popcount(A)
+#endif
+
+#include <stdio.h>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -10,10 +17,8 @@
 
 //---
 #define SORTED                0x80
-#define SWAPPED               0x01
-#define MERGE_SORTED          0x00
-#define MERGE_SWAPPED         0x01
-#define MERGE_NORMAL          0x02
+#define MERGE_SORTED          0
+#define MERGE_SWAPPED         8
 
 //---
 #define ASC(a, b, c, d, e, f, g, h)                                    \
@@ -190,6 +195,7 @@ void PathSort::sort8_adaptive(__m256i& array)
     }
   }
 }
+
 //---
 int PathSort::merge16(__m256i& a,
                       __m256i& b)
@@ -199,9 +205,7 @@ int PathSort::merge16(__m256i& a,
   int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(a, min)));
   if (ordered == 0xFF) {
     return MERGE_SORTED;
-  }
-  int swapped = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(reversed_b, min)));
-  if (swapped == 0xFF) {
+  } else if (ordered == 0x00) {
     __m256i t = a;
     a = b;
     b = t;
@@ -211,7 +215,7 @@ int PathSort::merge16(__m256i& a,
   a = min;
   SORT_ALREADY_BITONIC(a);
   SORT_ALREADY_BITONIC(b);
-  return MERGE_NORMAL;
+  return (8 - _POPCNT(ordered));
 }
 
 //---
