@@ -272,6 +272,7 @@ void PathSort::sort(int* array,
                 housing = right + 1;
                 free_houses = 8;
               }
+              R = _mm256_load_si256(right);
               __m256i H = _mm256_load_si256(housing);
               free_houses -= merge16(R, H);
               _mm256_store_si256(right, R);
