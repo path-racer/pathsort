@@ -259,16 +259,16 @@ void PathSort::sort(int* array,
               _mm256_store_si256(right, R);
               __m256i* n = right;
               __m256i K = R;
-              __m256i N = _mm256_load_si256(right + 1);
+              __m256i N = _mm256_load_si256(n + 1);
               int m = merge16(K, N);
               while (m != MERGE_SORTED) {
                 _mm256_store_si256(n, K);
-                _mm256_store_si256(++n, N);
-                if ((n + 1) == end) {
+                _mm256_store_si256(n + 1, N);
+                if ((n + 2) == end) {
                   break;
                 }
                 K = N;
-                N = _mm256_load_si256(n + 1);
+                N = _mm256_load_si256(++n + 1);
                 m = merge16(K, N);
               }
             }
