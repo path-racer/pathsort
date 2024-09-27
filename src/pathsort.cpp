@@ -1,8 +1,8 @@
 ﻿#ifdef _MSC_VER
-#define _POPCNT(A) __popcnt(A)
+#define _CLZ(A, R) { _BitScanReverse(R, A); }
 #else
 #include <avxintrin.h>
-#define _POPCNT(A) __builtin_popcount(A)
+#define _CLZ(A, R) { R = __builtin_clz(A); }
 #endif
 
 #include <stdio.h>
@@ -21,9 +21,14 @@
 #define MERGE_SWAPPED         8
 
 //---
-#define ASC(a, b, c, d, e, f, g, h)                                    \
+#define ASCENDING(a, b, c, d, e, f, g, h)                                    \
   (((h < 7) << 7) | ((g < 6) << 6) | ((f < 5) << 5) | ((e < 4) << 4) | \
       ((d < 3) << 3) | ((c < 2) << 2) | ((b < 1) << 1) | (a < 0))
+
+//---
+#define DESCENDING(a, b, c, d, e, f, g, h)                                    \
+  (((a < 0) << 7) | ((b < 1) << 6) | ((c < 2) << 5) | ((d < 3) << 4) | \
+      ((e < 4) << 3) | ((f < 5) << 2) | ((g < 6) << 1) | (h < 7))
 
 //---
 #define COEX_PERMUTE(vec, a, b, c, d, e, f, g, h, MASK){               \
@@ -70,25 +75,25 @@
     idx = _mm256_blendv_epi8(permuted_idx, idx, cmp);}
 
 //---
-#define SORT_8_IDX(vec, IDX){                                                   \
-  COEX_SHUFFLE_WITH_INDICES(vec, IDX, 1, 0, 3, 2, 5, 4, 7, 6, ASC);                           \
-  COEX_SHUFFLE_WITH_INDICES(vec, IDX, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
-  COEX_SHUFFLE_WITH_INDICES(vec, IDX, 0, 2, 1, 3, 4, 6, 5, 7, ASC);                           \
-  COEX_PERMUTE_WITH_INDICES(vec, IDX, 7, 6, 5, 4, 3, 2, 1, 0, ASC);                           \
-  COEX_PERMUTE_WITH_INDICES(vec, IDX, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
-  COEX_PERMUTE_WITH_INDICES(vec, IDX, 1, 0, 3, 2, 5, 4, 7, 6, ASC);}
+#define SORT_8_IDX(vec, ORDER, IDX){                                                   \
+  COEX_SHUFFLE_WITH_INDICES(vec, IDX, 1, 0, 3, 2, 5, 4, 7, 6, ORDER);                           \
+  COEX_SHUFFLE_WITH_INDICES(vec, IDX, 2, 3, 0, 1, 6, 7, 4, 5, ORDER);                           \
+  COEX_SHUFFLE_WITH_INDICES(vec, IDX, 0, 2, 1, 3, 4, 6, 5, 7, ORDER);                           \
+  COEX_PERMUTE_WITH_INDICES(vec, IDX, 7, 6, 5, 4, 3, 2, 1, 0, ORDER);                           \
+  COEX_PERMUTE_WITH_INDICES(vec, IDX, 2, 3, 0, 1, 6, 7, 4, 5, ORDER);                           \
+  COEX_PERMUTE_WITH_INDICES(vec, IDX, 1, 0, 3, 2, 5, 4, 7, 6, ORDER);}
 
 //---
-#define SORT_8(vec){                                                   \
-  COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ASC);                           \
-  COEX_SHUFFLE(vec, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
-  COEX_SHUFFLE(vec, 0, 2, 1, 3, 4, 6, 5, 7, ASC);                           \
-  COEX_PERMUTE(vec, 7, 6, 5, 4, 3, 2, 1, 0, ASC);                           \
-  COEX_SHUFFLE(vec, 2, 3, 0, 1, 6, 7, 4, 5, ASC);                           \
-  COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ASC);}
+#define SORT_8(vec, ORDER){                                                   \
+  COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ORDER);                           \
+  COEX_SHUFFLE(vec, 2, 3, 0, 1, 6, 7, 4, 5, ORDER);                           \
+  COEX_SHUFFLE(vec, 0, 2, 1, 3, 4, 6, 5, 7, ORDER);                           \
+  COEX_PERMUTE(vec, 7, 6, 5, 4, 3, 2, 1, 0, ORDER);                           \
+  COEX_SHUFFLE(vec, 2, 3, 0, 1, 6, 7, 4, 5, ORDER);                           \
+  COEX_SHUFFLE(vec, 1, 0, 3, 2, 5, 4, 7, 6, ORDER);}
 
 //---
-#define SORT_ALREADY_BITONIC(A){\
+#define SORT_ASCENDING_ALREADY_BITONIC(A){\
   __m256i p = _mm256_permute2x128_si256(A, A, 0x1); \
   __m256i _min = _mm256_min_epi32(A, p); \
   __m256i _max = _mm256_max_epi32(A, p); \
@@ -101,6 +106,21 @@
   _min = _mm256_min_epi32(A, p); \
   _max = _mm256_max_epi32(A, p); \
   A = _mm256_blend_epi32(_min, _max, 0xAA);}
+
+//---
+#define SORT_DESCENDING_ALREADY_BITONIC(A){\
+  __m256i p = _mm256_permute2x128_si256(A, A, 0x1); \
+  __m256i _min = _mm256_min_epi32(A, p); \
+  __m256i _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_max, _min, 0xF0); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(1, 0, 3, 2)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_max, _min, 0xCC); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(2, 3, 0, 1)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_max, _min, 0xAA);}
 
 //---
 PathSort::PathSort()
@@ -170,7 +190,7 @@ PathSort::PathSort()
 }
 
 //---
-void PathSort::sort8_adaptive(__m256i& array)
+void PathSort::sort8(__m256i& array)
 {
   __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
   __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
@@ -190,6 +210,7 @@ void PathSort::sort8_adaptive(__m256i& array)
                                                        rotated_array)));
     if (comparison != SORTED) {
       SORT_8_IDX(array,
+                 ASCENDING,
                  permutation);
       _permute_table_avx[og_comparison] = permutation;
     }
@@ -197,96 +218,95 @@ void PathSort::sort8_adaptive(__m256i& array)
 }
 
 //---
-int PathSort::merge16(__m256i& a,
-                      __m256i& b)
+void PathSort::merge16_ascending(__m256i& a,
+                                 __m256i& b)
 {
-  __m256i reversed_b = _mm256_permutevar8x32_epi32(b, _mm256_setr_epi32(7, 6, 5, 4, 3, 2, 1, 0));
-  __m256i min = _mm256_min_epi32(a, reversed_b);
+  __m256i min = _mm256_min_epi32(a, b);
   int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(a, min)));
   if (ordered == 0xFF) {
-    return MERGE_SORTED;
+    return;
   } else if (ordered == 0x00) {
     __m256i t = a;
     a = b;
     b = t;
-    return MERGE_SWAPPED;
+    return;
   }
-  b = _mm256_max_epi32(a, reversed_b);
+  b = _mm256_max_epi32(a, b);
   a = min;
-  SORT_ALREADY_BITONIC(a);
-  SORT_ALREADY_BITONIC(b);
-  return (8 - _POPCNT(ordered));
+  SORT_ASCENDING_ALREADY_BITONIC(a);
+  SORT_ASCENDING_ALREADY_BITONIC(b);
+}
+
+
+//---
+void PathSort::merge16_descending(__m256i& a,
+                                  __m256i& b)
+{
+  __m256i max = _mm256_max_epi32(a, b);
+  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(a, max)));
+  if (ordered == 0xFF) {
+    return;
+  } else if (ordered == 0x00) {
+    __m256i t = a;
+    a = b;
+    b = t;
+    return;
+  }
+  b = _mm256_min_epi32(a, b);
+  a = max;
+  SORT_DESCENDING_ALREADY_BITONIC(a);
+  SORT_DESCENDING_ALREADY_BITONIC(b);
 }
 
 //---
-void PathSort::sort(int* array,
+void PathSort::sort(int* keys,
+                    void* values,
                     unsigned int count)
 {
-  _array = (__m256i*)array;
+  __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
   unsigned int registers = count >> 3;
   for (unsigned int r = 0; r < registers; ++r) {
-    __m256i reg = _mm256_load_si256(&_array[r]);
-    SORT_8(reg);
-    _mm256_store_si256(&_array[r], reg);
-    if (!(++level_counts[0] & 0x1)) {
-      unsigned int level = 1;
-      while (true) {
-        const unsigned int batch_registers = 0x1 << (level - 1);
-        const unsigned int batch_scalars = 0x8 << (level - 1);
-        __m256i* left = &_array[(r >> level) << level];
-        __m256i* right = left + batch_registers;
-        if (level == 1) {
-          merge16(*left, *right);
-          if (!(++level_counts[level] & 0x1)) {
-            ++level;
-          } else {
-            break;
-          }
-          continue;
-        }
-        __m256i* end = right + batch_registers;
-        int* left_scalar = (int*)left;
-        int* right_scalar = (int*)right;
-        bool sorted = left_scalar[batch_scalars - 1] < right_scalar[0];
-        bool swapped = right_scalar[batch_scalars - 1] < left_scalar[0];
-        if (!sorted && !swapped) {
-          for (unsigned int i = 0; i < batch_registers; ++i) {
-            __m256i L = _mm256_load_si256(left);
-            __m256i R = _mm256_load_si256(right);
-            if (merge16(L, R) > 0) {
-              _mm256_store_si256(left, L);
-              _mm256_store_si256(right, R);
-              __m256i* n = right;
-              __m256i K = R;
-              __m256i N = _mm256_load_si256(n + 1);
-              int m = merge16(K, N);
-              while (m != MERGE_SORTED) {
-                _mm256_store_si256(n, K);
-                _mm256_store_si256(n + 1, N);
-                if ((n + 2) == end) {
-                  break;
-                }
-                K = N;
-                N = _mm256_load_si256(++n + 1);
-                m = merge16(K, N);
-              }
-            }
-            ++left;
-          }
-        } else if (swapped) {
-          for (unsigned int m = 0; m < batch_registers; ++m) {
-            __m256i L = _mm256_load_si256(left);
-            __m256i R = _mm256_load_si256(right);
-            _mm256_store_si256(left++, R);
-            _mm256_store_si256(right++, L);
-          }
-        }
-        if (!(++level_counts[level] & 0x1)) {
-          ++level;
-        } else {
-          break;
-        }
+    __m256i reg = _mm256_load_si256(&_keys[r]);
+    bool ascending = (r & 0x1) == 0;
+    if (ascending) {
+      SORT_8(reg, ASCENDING);
+    } else {
+      SORT_8(reg, DESCENDING);
+    }
+    _mm256_store_si256(&_keys[r], reg);
+  }
+  for (unsigned int r = 1; r < registers; r += 2) {
+    __m256i* left = &_keys[(r >> 1) << 1];
+    __m256i* right = left + 1;
+    bool ascending = (r & 2) == 0;
+    if (ascending) {
+      merge16_ascending(*left, *right);
+    } else {
+      merge16_descending(*left, *right);
+    }
+  }
+  unsigned long levels;
+  _CLZ(registers, &levels);
+  for (int level = 2; level <= levels; ++level) {
+    const unsigned int batch_registers = 0x1 << (level - 1);
+    const unsigned int increment = 0x1 << level;
+    const unsigned int start = increment - 1;
+    for (unsigned int r = start; r < registers; r += increment) {
+      __m256i* left = &_keys[(r >> level) << level];
+      __m256i* right = left + batch_registers;
+      bool ascending = (r & (0x1 << level)) == 0;
+      __m256i* nleft = left;
+      __m256i* nright = right;
+      for (int n = 0; n < batch_registers; ++n) {
+        __m256i L = _mm256_load_si256(nleft);
+        __m256i R = _mm256_load_si256(nright);
+        L = _mm256_min_epi32(L, R);
+        R = _mm256_max_epi32(L, R);
+        _mm256_store_si256(nleft, ascending ? L : R);
+        _mm256_store_si256(nright, ascending ? R : L);
+        ++nleft;
+        ++nright;
       }
     }
   }
@@ -304,33 +324,28 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 65536;
-  int* values = (int*)_aligned_malloc(sizeof(int) * count, 32);
+  const int count = 32;
+  int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
 
   for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      values[i] = random.next() & 0xFFFFFFFF;
+      keys[i] = random.next() & 0xFFFFFFFF;
  //     printf("%u\n", values[i]);
     }
     unsigned long long now = ticks_now();
-    pathsort.sort(values, count);
-    //std::sort(values, values + count);
-    //simd_merge_sort((float*)values, count);
-    //avx2::quicksort(values, count);
+    pathsort.sort(keys, nullptr, count);
+    //std::sort(keys, keys + count);
+    //simd_merge_sort((float*)keys, count);
+    //avx2::quicksort(keys, count);
     printf("%llu ticks\n", ticks_now() - now);
   }
 
-  for (int i = 0; i < count - 1; ++i) {
-    // printf("%u\n", values[i]);
-    if (values[i] > values[i + 1]) {
-      printf("FUCK\n");
-
-      //      return 0;
-    }
+  for (int i = 0; i < count; ++i) {
+    printf("%i\n", keys[i]);
   }
 
-  _aligned_free(values);
+  _aligned_free(keys);
   return 0;
 }
