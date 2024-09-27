@@ -12,7 +12,8 @@ struct PathSort
   //---
   PathSort();
   ~PathSort() {}
-  void sort8(__m256i& array);
+  void sort8_ascending(__m256i& array);
+  void sort8_descending(__m256i& array);
   void merge16_ascending(__m256i& a,
                          __m256i& b);
   void merge16_descending(__m256i& a,

@@ -17,8 +17,7 @@
 
 //---
 #define SORTED                0x80
-#define MERGE_SORTED          0
-#define MERGE_SWAPPED         8
+#define SWAP                  0x08
 
 //---
 #define ASCENDING(a, b, c, d, e, f, g, h)                                    \
@@ -190,31 +189,84 @@ PathSort::PathSort()
 }
 
 //---
-void PathSort::sort8(__m256i& array)
+void PathSort::sort8_ascending(__m256i& a)
 {
+  /*
   __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
-  __m256i rotated_array = _mm256_permutevar8x32_epi32(array,
-                                                      rotate_left);
+  __m256i rotated_a = _mm256_permutevar8x32_epi32(a,
+                                                  rotate_left);
   int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
-                                      _mm256_cmpgt_epi32(array,
-                                                          rotated_array)));
-  if (comparison != SORTED) {
-    int og_comparison = comparison;
-    __m256i permutation = _permute_table_avx[comparison];
-    array = _mm256_permutevar8x32_epi32(array,
-                                        permutation);
-    rotated_array = _mm256_permutevar8x32_epi32(array,
-                                                rotate_left);
-    comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
-                                    _mm256_cmpgt_epi32(array,
-                                                       rotated_array)));
-    if (comparison != SORTED) {
-      SORT_8_IDX(array,
-                 ASCENDING,
-                 permutation);
-      _permute_table_avx[og_comparison] = permutation;
-    }
-  }
+                                      _mm256_cmpgt_epi32(a, rotated_a)));
+  if (comparison == SORTED) {
+    return;
+  } else if (comparison == SWAP) {
+    a = _mm256_permute2x128_si256(a, a, 0x1);
+    return;
+  }*/
+
+  SORT_8(a, ASCENDING);
+
+  /*
+  int og_comparison = comparison;
+  __m256i permutation = _permute_table_avx[comparison];
+  a = _mm256_permutevar8x32_epi32(a,
+                                  permutation);
+  rotated_a = _mm256_permutevar8x32_epi32(a,
+                                          rotate_left);
+  comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
+                                  _mm256_cmpgt_epi32(a, rotated_a)));
+  if (comparison == SORTED) {
+    return;
+  } else if (comparison == SWAP) {
+    a = _mm256_permute2x128_si256(a, a, 0x1);
+    return;
+  } else {
+    SORT_8_IDX(a,
+               ASCENDING,
+               permutation);
+    _permute_table_avx[og_comparison] = permutation;
+  }*/
+}
+
+
+//---
+void PathSort::sort8_descending(__m256i& a)
+{
+  /*
+  __m256i rotate_left = _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 0);
+  __m256i rotated_a = _mm256_permutevar8x32_epi32(a,
+                                                  rotate_left);
+  int comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
+                                      _mm256_cmpgt_epi32(a, rotated_a)));
+  if (comparison == (~SORTED)) {
+    return;
+  } else if (comparison == (~SWAP)) {
+    a = _mm256_permute2x128_si256(a, a, 0x1);
+    return;
+  }*/
+
+  SORT_8(a, DESCENDING);
+
+  /*
+  int og_comparison = comparison;
+  __m256i permutation = _permute_table_avx[comparison];
+  a = _mm256_permutevar8x32_epi32(a,
+                                  permutation);
+  rotated_a = _mm256_permutevar8x32_epi32(a,
+                                          rotate_left);
+  comparison = _mm256_movemask_ps(_mm256_castsi256_ps(
+                                  _mm256_cmpgt_epi32(a, rotated_a)));
+  if (comparison == SORTED) {
+    return;
+  } else if (comparison == SWAP) {
+    a = _mm256_permute2x128_si256(a, a, 0x1);
+    return;
+  } else {
+    SORT_8_IDX(a,
+               ASCENDING,
+               permutation);
+    _permute_table_avx[og_comparison] = permutation;
+  }*/
 }
 
 //---
@@ -233,8 +285,8 @@ void PathSort::merge16_ascending(__m256i& a,
   }
   b = _mm256_max_epi32(a, b);
   a = min;
-  SORT_ASCENDING_ALREADY_BITONIC(a);
-  SORT_ASCENDING_ALREADY_BITONIC(b);
+  sort8_ascending(a);
+  sort8_ascending(b);
 }
 
 
@@ -254,8 +306,8 @@ void PathSort::merge16_descending(__m256i& a,
   }
   b = _mm256_min_epi32(a, b);
   a = max;
-  SORT_DESCENDING_ALREADY_BITONIC(a);
-  SORT_DESCENDING_ALREADY_BITONIC(b);
+  sort8_descending(a);
+  sort8_descending(b);
 }
 
 //---
@@ -265,18 +317,18 @@ void PathSort::sort(int* keys,
 {
   __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
-  unsigned int registers = count >> 3;
-  for (unsigned int r = 0; r < registers; ++r) {
+  unsigned int total_registers = count >> 3;
+  for (unsigned int r = 0; r < total_registers; ++r) {
     __m256i reg = _mm256_load_si256(&_keys[r]);
     bool ascending = (r & 0x1) == 0;
     if (ascending) {
-      SORT_8(reg, ASCENDING);
+      sort8_ascending(reg);
     } else {
-      SORT_8(reg, DESCENDING);
+      sort8_descending(reg);
     }
     _mm256_store_si256(&_keys[r], reg);
   }
-  for (unsigned int r = 1; r < registers; r += 2) {
+  for (unsigned int r = 1; r < total_registers; r += 2) {
     __m256i* left = &_keys[(r >> 1) << 1];
     __m256i* right = left + 1;
     bool ascending = (r & 2) == 0;
@@ -287,26 +339,48 @@ void PathSort::sort(int* keys,
     }
   }
   unsigned long levels;
-  _CLZ(registers, &levels);
-  for (int level = 2; level <= levels; ++level) {
-    const unsigned int batch_registers = 0x1 << (level - 1);
+  _CLZ(total_registers, &levels);
+  for (unsigned int level = 2; level <= levels; ++level) {
+    const unsigned int batch_registers = total_registers >> 1;
     const unsigned int increment = 0x1 << level;
     const unsigned int start = increment - 1;
-    for (unsigned int r = start; r < registers; r += increment) {
+    for (unsigned int r = start; r < total_registers; r += increment) {
       __m256i* left = &_keys[(r >> level) << level];
       __m256i* right = left + batch_registers;
       bool ascending = (r & (0x1 << level)) == 0;
-      __m256i* nleft = left;
-      __m256i* nright = right;
-      for (int n = 0; n < batch_registers; ++n) {
-        __m256i L = _mm256_load_si256(nleft);
-        __m256i R = _mm256_load_si256(nright);
-        L = _mm256_min_epi32(L, R);
-        R = _mm256_max_epi32(L, R);
-        _mm256_store_si256(nleft, ascending ? L : R);
-        _mm256_store_si256(nright, ascending ? R : L);
-        ++nleft;
-        ++nright;
+      const unsigned int registers = 0x1 << level;
+      // Split from this level back down until our batch sizes are at level 1.
+      for (unsigned int descent = level; descent > 0; --descent) {
+        const unsigned int splits = registers >> descent;
+        const unsigned int split_registers = 0x1 << (descent - 1);
+        for (unsigned int s = 0; s < splits; ++s) {
+          __m256i* nleft = &left[s << descent];
+          __m256i* nright = nleft + split_registers;
+          for (unsigned int n = 0; n < split_registers; ++n) {
+            __m256i L = _mm256_load_si256(nleft);
+            __m256i R = _mm256_load_si256(nright);
+            __m256i _min = _mm256_min_epi32(L, R);
+            __m256i _max = _mm256_max_epi32(L, R);
+            _mm256_store_si256(nleft, ascending ? _min : _max);
+            _mm256_store_si256(nright, ascending ? _max : _min);
+            ++nleft;
+            ++nright;
+          }
+        }
+      }
+      // Now we're back at level 0 where we can just sort8 each register.
+      for (unsigned int f = 0; f < registers; f += 2) {
+        __m256i L = _mm256_load_si256(left + f);
+        __m256i R = _mm256_load_si256(left + f + 1);
+        if (ascending) {
+          sort8_ascending(L);
+          sort8_ascending(R);
+        } else {
+          sort8_descending(L);
+          sort8_descending(R);
+        }
+        _mm256_store_si256(left + f, L);
+        _mm256_store_si256(left + f + 1, R);
       }
     }
   }
@@ -324,12 +398,12 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 32;
+  const int count = 65536;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
 
-  for (int i = 0; i < 1; ++i) {
+  for (int i = 0; i < 10; ++i) {
     for (int i = 0; i < count; ++i) {
       keys[i] = random.next() & 0xFFFFFFFF;
  //     printf("%u\n", values[i]);
@@ -340,10 +414,15 @@ int main()
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
     printf("%llu ticks\n", ticks_now() - now);
-  }
 
-  for (int i = 0; i < count; ++i) {
-    printf("%i\n", keys[i]);
+    
+    for (unsigned int i = 0; i < count - 1; ++i) {
+      //    printf("%i\n", keys[i]);
+      if (keys[i] > keys[i + 1]) {
+        printf("FUCK\n");
+        printf("%i vs %i\n", keys[i], keys[i+1]);
+      }
+    }
   }
 
   _aligned_free(keys);
