@@ -311,63 +311,65 @@ void PathSort::sort_bitonic(int* keys,
   __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
   unsigned int total_registers = count >> 3;
-  for (unsigned int r = 0; r < total_registers; ++r) {
-    __m256i reg = _mm256_load_si256(&_keys[r]);
-    bool ascending = (r & 0x1) == 0;
-    if (ascending) {
-      sort8_ascending(reg);
-    } else {
-      sort8_descending(reg);
-    }
-    _mm256_store_si256(&_keys[r], reg);
-    unsigned int level = 0;
-    while (!(++level_counts[level] & 0x1)) {
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    __m256i r0 = _mm256_load_si256(&_keys[r]);
+    __m256i r1 = _mm256_load_si256(&_keys[r + 1]);
+    sort8_ascending(r0);
+    sort8_descending(r1);
+    merge16_ascending(r0, r1);
+    _mm256_store_si256(&_keys[r], r0);
+    _mm256_store_si256(&_keys[r + 1], r1);
+  }
+  for (unsigned int r = 2; r < total_registers; r += 4) {
+    __m256i r0 = _mm256_load_si256(&_keys[r]);
+    __m256i r1 = _mm256_load_si256(&_keys[r + 1]);
+    sort8_ascending(r0);
+    sort8_descending(r1);
+    merge16_descending(r0, r1);
+    _mm256_store_si256(&_keys[r], r0);
+    _mm256_store_si256(&_keys[r + 1], r1);
+  }
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    unsigned int level = 1;
+    do {
       ++level;
       const unsigned int batch_registers = 0x1 << (level - 1);
-      ascending = (r & (0x1 << level)) == 0;
+      bool ascending = (r & (0x1 << level)) == 0;
       __m256i* left = &_keys[(r >> level) << level];
       __m256i* right = left + batch_registers;
-      if (level == 1) {
-        if (ascending) {
-          merge16_ascending(*left, *right);
-        } else {
-          merge16_descending(*left, *right);
-        }
-      } else {
-        const unsigned int registers = 0x1 << level;
-        for (unsigned int descent = level; descent > 0; --descent) {
-          const unsigned int splits = registers >> descent;
-          const unsigned int split_registers = 0x1 << (descent - 1);
-          for (unsigned int s = 0; s < splits; ++s) {
-            __m256i* nleft = &left[s << descent];
-            __m256i* nright = nleft + split_registers;
-            for (unsigned int n = 0; n < split_registers; ++n) {
-              __m256i L = _mm256_load_si256(nleft);
-              __m256i R = _mm256_load_si256(nright);
-              __m256i _min = _mm256_min_epi32(L, R);
-              __m256i _max = _mm256_max_epi32(L, R);
-              _mm256_store_si256(nleft, ascending ? _min : _max);
-              _mm256_store_si256(nright, ascending ? _max : _min);
-              ++nleft;
-              ++nright;
-            }
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int descent = level; descent > 0; --descent) {
+        const unsigned int splits = registers >> descent;
+        const unsigned int split_registers = 0x1 << (descent - 1);
+        for (unsigned int s = 0; s < splits; ++s) {
+          __m256i* nleft = &left[s << descent];
+          __m256i* nright = nleft + split_registers;
+          for (unsigned int n = 0; n < split_registers; ++n) {
+            __m256i L = _mm256_load_si256(nleft);
+            __m256i R = _mm256_load_si256(nright);
+            __m256i _min = _mm256_min_epi32(L, R);
+            __m256i _max = _mm256_max_epi32(L, R);
+            _mm256_store_si256(nleft, ascending ? _min : _max);
+            _mm256_store_si256(nright, ascending ? _max : _min);
+            ++nleft;
+            ++nright;
           }
-        }
-        for (unsigned int f = 0; f < registers; f += 2) {
-          __m256i L = _mm256_load_si256(left + f);
-          __m256i R = _mm256_load_si256(left + f + 1);
-          if (ascending) {
-            sort8_ascending(L);
-            sort8_ascending(R);
-          } else {
-            sort8_descending(L);
-            sort8_descending(R);
-          }
-          _mm256_store_si256(left + f, L);
-          _mm256_store_si256(left + f + 1, R);
         }
       }
-    }
+      for (unsigned int f = 0; f < registers; f += 2) {
+        __m256i L = _mm256_load_si256(left + f);
+        __m256i R = _mm256_load_si256(left + f + 1);
+        if (ascending) {
+          sort8_ascending(L);
+          sort8_ascending(R);
+        } else {
+          sort8_descending(L);
+          sort8_descending(R);
+        }
+        _mm256_store_si256(left + f, L);
+        _mm256_store_si256(left + f + 1, R);
+      }
+    } while (!(++level_counts[level] & 0x1));
   }
 }
 
