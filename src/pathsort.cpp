@@ -385,7 +385,7 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 65536;
+  const int count = 65536 * 1024;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
