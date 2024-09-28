@@ -1,11 +1,4 @@
-﻿#ifdef _MSC_VER
-#define _CLZ(A, R) { _BitScanReverse(R, A); }
-#else
-#include <avxintrin.h>
-#define _CLZ(A, R) { R = __builtin_clz(A); }
-#endif
-
-#include <stdio.h>
+﻿#include <stdio.h>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -311,7 +304,7 @@ void PathSort::merge16_descending(__m256i& a,
 }
 
 //---
-void PathSort::sort(int* keys,
+void PathSort::sort_bitonic(int* keys,
                     void* values,
                     unsigned int count)
 {
@@ -327,60 +320,52 @@ void PathSort::sort(int* keys,
       sort8_descending(reg);
     }
     _mm256_store_si256(&_keys[r], reg);
-  }
-  for (unsigned int r = 1; r < total_registers; r += 2) {
-    __m256i* left = &_keys[(r >> 1) << 1];
-    __m256i* right = left + 1;
-    bool ascending = (r & 2) == 0;
-    if (ascending) {
-      merge16_ascending(*left, *right);
-    } else {
-      merge16_descending(*left, *right);
-    }
-  }
-  unsigned long levels;
-  _CLZ(total_registers, &levels);
-  for (unsigned int level = 2; level <= levels; ++level) {
-    const unsigned int batch_registers = total_registers >> 1;
-    const unsigned int increment = 0x1 << level;
-    const unsigned int start = increment - 1;
-    for (unsigned int r = start; r < total_registers; r += increment) {
+    unsigned int level = 0;
+    while (!(++level_counts[level] & 0x1)) {
+      ++level;
+      const unsigned int batch_registers = 0x1 << (level - 1);
+      ascending = (r & (0x1 << level)) == 0;
       __m256i* left = &_keys[(r >> level) << level];
       __m256i* right = left + batch_registers;
-      bool ascending = (r & (0x1 << level)) == 0;
-      const unsigned int registers = 0x1 << level;
-      // Split from this level back down until our batch sizes are at level 1.
-      for (unsigned int descent = level; descent > 0; --descent) {
-        const unsigned int splits = registers >> descent;
-        const unsigned int split_registers = 0x1 << (descent - 1);
-        for (unsigned int s = 0; s < splits; ++s) {
-          __m256i* nleft = &left[s << descent];
-          __m256i* nright = nleft + split_registers;
-          for (unsigned int n = 0; n < split_registers; ++n) {
-            __m256i L = _mm256_load_si256(nleft);
-            __m256i R = _mm256_load_si256(nright);
-            __m256i _min = _mm256_min_epi32(L, R);
-            __m256i _max = _mm256_max_epi32(L, R);
-            _mm256_store_si256(nleft, ascending ? _min : _max);
-            _mm256_store_si256(nright, ascending ? _max : _min);
-            ++nleft;
-            ++nright;
+      if (level == 1) {
+        if (ascending) {
+          merge16_ascending(*left, *right);
+        } else {
+          merge16_descending(*left, *right);
+        }
+      } else {
+        const unsigned int registers = 0x1 << level;
+        for (unsigned int descent = level; descent > 0; --descent) {
+          const unsigned int splits = registers >> descent;
+          const unsigned int split_registers = 0x1 << (descent - 1);
+          for (unsigned int s = 0; s < splits; ++s) {
+            __m256i* nleft = &left[s << descent];
+            __m256i* nright = nleft + split_registers;
+            for (unsigned int n = 0; n < split_registers; ++n) {
+              __m256i L = _mm256_load_si256(nleft);
+              __m256i R = _mm256_load_si256(nright);
+              __m256i _min = _mm256_min_epi32(L, R);
+              __m256i _max = _mm256_max_epi32(L, R);
+              _mm256_store_si256(nleft, ascending ? _min : _max);
+              _mm256_store_si256(nright, ascending ? _max : _min);
+              ++nleft;
+              ++nright;
+            }
           }
         }
-      }
-      // Now we're back at level 0 where we can just sort8 each register.
-      for (unsigned int f = 0; f < registers; f += 2) {
-        __m256i L = _mm256_load_si256(left + f);
-        __m256i R = _mm256_load_si256(left + f + 1);
-        if (ascending) {
-          sort8_ascending(L);
-          sort8_ascending(R);
-        } else {
-          sort8_descending(L);
-          sort8_descending(R);
+        for (unsigned int f = 0; f < registers; f += 2) {
+          __m256i L = _mm256_load_si256(left + f);
+          __m256i R = _mm256_load_si256(left + f + 1);
+          if (ascending) {
+            sort8_ascending(L);
+            sort8_ascending(R);
+          } else {
+            sort8_descending(L);
+            sort8_descending(R);
+          }
+          _mm256_store_si256(left + f, L);
+          _mm256_store_si256(left + f + 1, R);
         }
-        _mm256_store_si256(left + f, L);
-        _mm256_store_si256(left + f + 1, R);
       }
     }
   }
@@ -409,7 +394,7 @@ int main()
  //     printf("%u\n", values[i]);
     }
     unsigned long long now = ticks_now();
-    pathsort.sort(keys, nullptr, count);
+    pathsort.sort_bitonic(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);

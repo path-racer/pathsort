@@ -18,9 +18,9 @@ struct PathSort
                          __m256i& b);
   void merge16_descending(__m256i& a,
                           __m256i& b);
-  void sort(int* keys,
-            void* values,
-            unsigned int count);
+  void sort_bitonic(int* keys,
+                    void* values,
+                    unsigned int count);
 };
 
 //---
