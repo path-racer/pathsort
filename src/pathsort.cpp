@@ -60,14 +60,39 @@
 }
 
 //---
-#define MERGE16(V0, V1, ASC) \
+#define MERGE16_ASCENDING(V0, V1) \
 { \
   __m256i _min = _mm256_min_epi32(V0, V1); \
-  __m256i _max = _mm256_max_epi32(V0, V1); \
-  V0 = ASC ? _min : _max; \
-  V1 = ASC ? _max : _min; \
-  SORT8(V0, ASC); \
-  SORT8(V1, ASC); \
+  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(V0, _min))); \
+  if (ordered == 0x00) {\
+    __m256i t = V0; \
+    V0 = V1; \
+    V1 = t; \
+  } else if (ordered < 0xFF) { \
+    __m256i _max = _mm256_max_epi32(V0, V1); \
+    V0 = _min; \
+    V1 = _max; \
+    SORT8(V0, true); \
+    SORT8(V1, true); \
+  } \
+}
+
+//---
+#define MERGE16_DESCENDING(V0, V1) \
+{ \
+  __m256i _min = _mm256_min_epi32(V0, V1); \
+  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(V0, _min))); \
+  if (ordered == 0xFF) {\
+    __m256i t = V0; \
+    V0 = V1; \
+    V1 = t; \
+  } else if (ordered > 0x00) { \
+    __m256i _max = _mm256_max_epi32(V0, V1); \
+    V0 = _max; \
+    V1 = _min; \
+    SORT8(V0, false); \
+    SORT8(V1, false); \
+  } \
 }
 
 //---
@@ -84,9 +109,9 @@ void PathSort::sort_bitonic(int* keys,
     SORT8(r0, true);
     SORT8(r1, false);
     if (r & 0x2) {
-      MERGE16(r0, r1, false);
+      MERGE16_DESCENDING(r0, r1);
     } else {
-      MERGE16(r0, r1, true);
+      MERGE16_ASCENDING(r0, r1);
     }
     _mm256_store_si256(&_keys[r], r0);
     _mm256_store_si256(&_keys[r + 1], r1);
