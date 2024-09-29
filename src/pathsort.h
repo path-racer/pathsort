@@ -10,14 +10,8 @@ struct PathSort
   __m256i      _permute_table_avx[256];
 
   //---
-  PathSort();
+  PathSort() {}
   ~PathSort() {}
-  void sort8_ascending(__m256i& array);
-  void sort8_descending(__m256i& array);
-  void merge16_ascending(__m256i& a,
-                         __m256i& b);
-  void merge16_descending(__m256i& a,
-                          __m256i& b);
   void sort_bitonic(int* keys,
                     void* values,
                     unsigned int count);
