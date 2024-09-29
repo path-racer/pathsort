@@ -78,21 +78,16 @@ void PathSort::sort_bitonic(int* keys,
   __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
   unsigned int total_registers = count >> 3;
-  for (unsigned int r = 0; r < total_registers; r += 4) {
+  for (unsigned int r = 0; r < total_registers; r += 2) {
     __m256i r0 = _mm256_load_si256(&_keys[r]);
     __m256i r1 = _mm256_load_si256(&_keys[r + 1]);
     SORT8(r0, true);
     SORT8(r1, false);
-    MERGE16(r0, r1, true);
-    _mm256_store_si256(&_keys[r], r0);
-    _mm256_store_si256(&_keys[r + 1], r1);
-  }
-  for (unsigned int r = 2; r < total_registers; r += 4) {
-    __m256i r0 = _mm256_load_si256(&_keys[r]);
-    __m256i r1 = _mm256_load_si256(&_keys[r + 1]);
-    SORT8(r0, true);
-    SORT8(r1, false);
-    MERGE16(r0, r1, false);
+    if (r & 0x2) {
+      MERGE16(r0, r1, false);
+    } else {
+      MERGE16(r0, r1, true);
+    }
     _mm256_store_si256(&_keys[r], r0);
     _mm256_store_si256(&_keys[r + 1], r1);
   }
