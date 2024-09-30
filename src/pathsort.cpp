@@ -116,6 +116,13 @@ void PathSort::sort_bitonic(int* keys,
     _mm256_store_si256(&_keys[r], r0);
     _mm256_store_si256(&_keys[r + 1], r1);
   }
+
+  printf("--------\n");
+  for (unsigned int i = 0; i < count; ++i) {
+    printf("%i\n", keys[i]);
+  }
+  printf("--------\n");
+
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
     do {
@@ -129,14 +136,15 @@ void PathSort::sort_bitonic(int* keys,
         const unsigned int splits = registers >> descent;
         const unsigned int split_registers = 0x1 << (descent - 1);
         for (unsigned int s = 0; s < splits; ++s) {
-          unsigned int step_size = split_registers >> 1;
-          unsigned int bitonic_point = step_size;
+          unsigned int bitonic_point = 0;
           __m256i* nleft = &left[s << descent];
           __m256i* nright = nleft + split_registers;
           __m256i L = nleft[bitonic_point];
           __m256i R = nright[bitonic_point];
           if (split_registers > 1) {
+
             // Find the bitonic point using binary search.
+            /*
             __m256i* bleft = nleft;
             __m256i* bright = nright;
             int compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
@@ -153,9 +161,20 @@ void PathSort::sort_bitonic(int* keys,
             }
             // If search ended without a mixed register, the bitonic point is the first element of the next register.
             if (compare == 0x00) {
-              bitonic_point++;
+              bitonic_point += (bitonic_point + 1) < split_registers;
               L = nleft[bitonic_point];
               R = nright[bitonic_point];
+            }*/
+
+            // Find the bitonic point using linear search.
+            for (unsigned int i = 0; i < split_registers; ++i) {
+              L = nleft[i];
+              R = nright[i];
+              int compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(L, R)));
+              if (compare > 0x00) {
+                bitonic_point = i;
+                break;
+              }
             }
           }
           // Now that we've found the bitonic point, swap it, then all after it for ascending, or all before it for descending.
@@ -202,19 +221,82 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 32;
+  const int count = 64;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  int v[32] =
+  int v[64] =
   {
-    9,8,9,8,1,8,9,1, 0,9,1,1,1,8,9,9, 1,8,8,1,1,1,8,1, 9,0,9,8,8,1,1,1
+    0,
+    0,
+    0,
+    1,
+    1,
+    8,
+    8,
+    8,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    8,
+    8,
+    8,
+    8,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    8,
+    8,
+    8,
+    8,
+    8,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    8,
+    8,
+    8,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0
   };
 
   for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0x9;// &0xFFFFFFFF;
-      printf("%u\n", keys[i]);
+      keys[i] = random.next() & 0x9;
+    //  printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
@@ -225,7 +307,7 @@ int main()
     printf("%llu ticks\n", ticks_now() - now);
 
     for (unsigned int i = 0; i < count - 1; ++i) {
-      printf("%i\n", v[i]);
+ //     printf("%i\n", keys[i]);
       if (v[i] > v[i + 1]) {
         printf("FUCK\n");
       }
