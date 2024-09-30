@@ -134,10 +134,16 @@ void PathSort::sort_bitonic(int* keys,
           for (unsigned int n = 0; n < split_registers; ++n) {
             __m256i L = _mm256_load_si256(nleft);
             __m256i R = _mm256_load_si256(nright);
-            __m256i _min = _mm256_min_epi32(L, R);
-            __m256i _max = _mm256_max_epi32(L, R);
-            _mm256_store_si256(nleft, ascending ? _min : _max);
-            _mm256_store_si256(nright, ascending ? _max : _min);
+            int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
+            __m256i min = _mm256_min_epi32(L, R);
+            __m256i max = _mm256_max_epi32(L, R);
+            if (ascending && (ordered != 0xFF)) {
+              _mm256_store_si256(nleft, min);
+              _mm256_store_si256(nright, max);
+            } else if (!ascending && (ordered != 0x00)) {
+              _mm256_store_si256(nleft, _mm256_max_epi32(L, R));
+              _mm256_store_si256(nright, _mm256_min_epi32(L, R));
+            }
             ++nleft;
             ++nright;
           }
