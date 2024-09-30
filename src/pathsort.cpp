@@ -119,7 +119,7 @@ void PathSort::sort_bitonic(int* keys,
 
   printf("--------\n");
   for (unsigned int i = 0; i < count; ++i) {
-    printf("%i\n", keys[i]);
+    printf("%i, ", keys[i]);
   }
   printf("--------\n");
 
