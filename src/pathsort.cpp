@@ -97,8 +97,8 @@
 
 //---
 void PathSort::sort_bitonic(int* keys,
-                    void* values,
-                    unsigned int count)
+  void* values,
+  unsigned int count)
 {
   __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
@@ -131,21 +131,42 @@ void PathSort::sort_bitonic(int* keys,
         for (unsigned int s = 0; s < splits; ++s) {
           __m256i* nleft = &left[s << descent];
           __m256i* nright = nleft + split_registers;
-          for (unsigned int n = 0; n < split_registers; ++n) {
-            __m256i L = _mm256_load_si256(nleft);
-            __m256i R = _mm256_load_si256(nright);
-            int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
-            __m256i min = _mm256_min_epi32(L, R);
-            __m256i max = _mm256_max_epi32(L, R);
-            if (ascending && (ordered != 0xFF)) {
-              _mm256_store_si256(nleft, min);
-              _mm256_store_si256(nright, max);
-            } else if (!ascending && (ordered != 0x00)) {
-              _mm256_store_si256(nleft, _mm256_max_epi32(L, R));
-              _mm256_store_si256(nright, _mm256_min_epi32(L, R));
+          __m256i* bleft = nleft;
+          __m256i* bright = nright;
+          // Find the bitonic point using binary search.
+          unsigned int step_size = split_registers >> 1;
+          unsigned int bitonic_point = step_size;
+          __m256i L, R;
+          int compare = 0xFF;
+          while (step_size > 0) {
+            L = nleft[bitonic_point];
+            R = nright[bitonic_point];
+            compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
+            if ((compare != 0x00) && (compare != 0xFF)) {
+              break;
             }
-            ++nleft;
-            ++nright;
+            bool move_left = (compare == 0x00);
+            bool move_right = (compare == 0xFF);
+            bitonic_point -= move_left * step_size;
+            bitonic_point += move_right * step_size;
+            step_size >>= 1;
+          }
+          // If search ended without a mixed register, the bitonic point is the first element of the next register.
+          bitonic_point += (compare == 0x00);
+          L = nleft[bitonic_point];
+          R = nright[bitonic_point];
+          // Now that we've found the bitonic point, swap it, then all after it for ascending, or all before it for descending.
+          __m256i min = _mm256_min_epi32(L, R);
+          __m256i max = _mm256_max_epi32(L, R);
+          _mm256_store_si256(&nleft[bitonic_point], ascending ? min : max);
+          _mm256_store_si256(&nright[bitonic_point], ascending ? max : min);
+          int count = ascending ? (split_registers - (bitonic_point + 1)) : bitonic_point;
+          int start = ascending ? (bitonic_point + 1) : 0;
+          for (int s = 0; s < count; ++s) {
+            __m256i L = nleft[start + s];
+            __m256i R = nright[start + s];
+            _mm256_store_si256(&nleft[start + s], R);
+            _mm256_store_si256(&nright[start + s], L);
           }
         }
       }
@@ -178,18 +199,23 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 65536;
+  const int count = 32;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-
-  for (int i = 0; i < 10; ++i) {
+  int v[32] =
+  {
+    9,9,1,0,9,0,9,8, 1,1,9,8,9,0,0,0, 8,8,1,0,0,0,0,0, 8,1,1,0,0,1,1,0
+  };
+  
+  for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0xFFFFFFFF;
- //     printf("%u\n", values[i]);
+      keys[i] = random.next() & 0x9;// &0xFFFFFFFF;
+    //  printf("%u\n", keys[i]);
     }
+
     unsigned long long now = ticks_now();
-    pathsort.sort_bitonic(keys, nullptr, count);
+    pathsort.sort_bitonic(v, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
@@ -197,10 +223,9 @@ int main()
 
     
     for (unsigned int i = 0; i < count - 1; ++i) {
-      //    printf("%i\n", keys[i]);
-      if (keys[i] > keys[i + 1]) {
+      printf("%i\n", v[i]);
+      if (v[i] > v[i + 1]) {
         printf("FUCK\n");
-        printf("%i vs %i\n", keys[i], keys[i+1]);
       }
     }
   }
