@@ -129,7 +129,51 @@ void PathSort::sort_bitonic(int* keys,
     }
   }
 
-  
+  /*
+  printf("--------\n");
+  for (unsigned int i = 0; i < count; ++i) {
+    printf("%i, ", keys[i]);
+  }
+  printf("--------\n");*/
+
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    unsigned int level = 1;
+    do {
+      ++level;
+      const unsigned int batch_registers = 0x1 << (level - 1);
+      int ascending = (r & (0x1 << level)) == 0;
+      __m256i* left = &_keys[(r >> level) << level];
+      __m256i* right = left + batch_registers;
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int descent = level; descent > 0; --descent) {
+        const unsigned int splits = registers >> descent;
+        const unsigned int split_registers = 0x1 << (descent - 1);
+        const unsigned int split_elements = split_registers << 3;
+        for (unsigned int s = 0; s < splits; ++s) {
+          int* nleft = (int*)&left[s << descent];
+          int* nright = (int*)(nleft + split_elements);
+          for (unsigned int n = 0; n < split_elements; ++n) {
+            int a = nleft[n];
+            int b = nright[n];
+            int min = a <= b ? a : b;
+            int max = a > b ? a : b;
+            nleft[n] = ascending ? min : max;
+            nright[n] = ascending ? max : min;
+          }
+        }
+      }
+      for (unsigned int f = 0; f < registers; ++f) {
+        __m256i* L = &left[f];
+        if (ascending) {
+          SORT8_ALREADY_BITONIC_ASC(*L);
+        } else {
+          SORT8_ALREADY_BITONIC_DESC(*L);
+        }
+      }
+    } while (!(++level_counts[level] & 0x1));
+  }
+
+  /*
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
     do {
@@ -186,13 +230,8 @@ void PathSort::sort_bitonic(int* keys,
         }
       }
 
-      printf("--------\n");
-      for (unsigned int i = 0; i < count; ++i) {
-        printf("%i, ", keys[i]);
-      }
-      printf("--------\n");
     } while (!(++level_counts[level] & 0x1));
-  }
+  }*/
 
   /*
   for (unsigned int r = 0; r < total_registers; r += 4) {
