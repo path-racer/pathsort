@@ -124,8 +124,7 @@ void PathSort::sort_bitonic(int* keys,
     SORT8(r1, false);
     if (r & 0x2) {
       MERGE16_DESCENDING(r0, r1);
-    }
-    else {
+    } else {
       MERGE16_ASCENDING(r0, r1);
     }
     _mm256_store_si256(&_keys[r], r0);
