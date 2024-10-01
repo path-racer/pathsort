@@ -19,6 +19,36 @@
       ((e < 4) << 3) | ((f < 5) << 2) | ((g < 6) << 1) | (h < 7))
 
 //---
+#define SORT8_ALREADY_BITONIC_ASC(A){\
+  __m256i p = _mm256_permute2x128_si256(A, A, 0x1); \
+  __m256i _min = _mm256_min_epi32(A, p); \
+  __m256i _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_min, _max, 0xF0); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(1, 0, 3, 2)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_min, _max, 0xCC); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(2, 3, 0, 1)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_min, _max, 0xAA);}
+
+//---
+#define SORT8_ALREADY_BITONIC_DESC(A){\
+  __m256i p = _mm256_permute2x128_si256(A, A, 0x1); \
+  __m256i _min = _mm256_min_epi32(A, p); \
+  __m256i _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_max, _min, 0xF0); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(1, 0, 3, 2)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_max, _min, 0xCC); \
+  p = _mm256_shuffle_epi32(A, _MM_SHUFFLE(2, 3, 0, 1)); \
+  _min = _mm256_min_epi32(A, p); \
+  _max = _mm256_max_epi32(A, p); \
+  A = _mm256_blend_epi32(_max, _min, 0xAA);}
+
+//---
 #define SORT8(V, ASC) \
 { \
   constexpr int shuffle_masks[3] = { _MM_SHUFFLE(2, 3, 0, 1), \
@@ -63,36 +93,20 @@
 #define MERGE16_ASCENDING(V0, V1) \
 { \
   __m256i _min = _mm256_min_epi32(V0, V1); \
-  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(V0, _min))); \
-  if (ordered == 0x00) {\
-    __m256i t = V0; \
-    V0 = V1; \
-    V1 = t; \
-  } else if (ordered < 0xFF) { \
-    __m256i _max = _mm256_max_epi32(V0, V1); \
-    V0 = _min; \
-    V1 = _max; \
-  } \
-  SORT8(V0, true); \
-  SORT8(V1, true); \
+  V1 = _mm256_max_epi32(V0, V1); \
+  V0 = _min; \
+  SORT8_ALREADY_BITONIC_ASC(V0); \
+  SORT8_ALREADY_BITONIC_ASC(V1); \
 }
 
 //---
 #define MERGE16_DESCENDING(V0, V1) \
 { \
-  __m256i _min = _mm256_min_epi32(V0, V1); \
-  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(V0, _min))); \
-  if (ordered == 0xFF) {\
-    __m256i t = V0; \
-    V0 = V1; \
-    V1 = t; \
-  } else if (ordered > 0x00) { \
-    __m256i _max = _mm256_max_epi32(V0, V1); \
-    V0 = _max; \
-    V1 = _min; \
-    SORT8(V0, false); \
-    SORT8(V1, false); \
-  } \
+  __m256i _max = _mm256_max_epi32(V0, V1); \
+  V1 = _mm256_min_epi32(V0, V1); \
+  V0 = _max; \
+  SORT8_ALREADY_BITONIC_DESC(V0); \
+  SORT8_ALREADY_BITONIC_DESC(V1); \
 }
 
 //---
@@ -130,6 +144,50 @@ void PathSort::sort_bitonic(int* keys,
     do {
       ++level;
       const unsigned int batch_registers = 0x1 << (level - 1);
+      bool ascending = (r & (0x1 << level)) == 0;
+      __m256i* left = &_keys[(r >> level) << level];
+      __m256i* right = left + batch_registers;
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int descent = level; descent > 0; --descent) {
+        const unsigned int splits = registers >> descent;
+        const unsigned int split_registers = 0x1 << (descent - 1);
+        for (unsigned int s = 0; s < splits; ++s) {
+          __m256i* nleft = &left[s << descent];
+          __m256i* nright = nleft + split_registers;
+          for (unsigned int n = 0; n < split_registers; ++n) {
+            __m256i L = _mm256_load_si256(nleft);
+            __m256i R = _mm256_load_si256(nright);
+            __m256i _min = _mm256_min_epi32(L, R);
+            __m256i _max = _mm256_max_epi32(L, R);
+            _mm256_store_si256(nleft, ascending ? _min : _max);
+            _mm256_store_si256(nright, ascending ? _max : _min);
+            ++nleft;
+            ++nright;
+          }
+        }
+      }
+      for (unsigned int f = 0; f < registers; f += 2) {
+        __m256i L = _mm256_load_si256(left + f);
+        __m256i R = _mm256_load_si256(left + f + 1);
+        if (ascending) {
+          SORT8(L, true);
+          SORT8(R, true);
+        } else {
+          SORT8(L, false);
+          SORT8(R, false);
+        }
+        _mm256_store_si256(left + f, L);
+        _mm256_store_si256(left + f + 1, R);
+      }
+    } while (!(++level_counts[level] & 0x1));
+  }
+
+  /*
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    unsigned int level = 1;
+    do {
+      ++level;
+      const unsigned int batch_registers = 0x1 << (level - 1);
       const bool ascending = ((r & (0x1 << level)) == 0);
       __m256i* left = &_keys[(r >> level) << level];
       __m256i* right = left + batch_registers;
@@ -149,7 +207,6 @@ void PathSort::sort_bitonic(int* keys,
           if (split_registers > 1) {
 
             // Find the bitonic point using binary search.
-            /*
             __m256i* bleft = nleft;
             __m256i* bright = nright;
             int compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
@@ -169,7 +226,7 @@ void PathSort::sort_bitonic(int* keys,
               bitonic_point += (bitonic_point + 1) < split_registers;
               L = nleft[bitonic_point];
               R = nright[bitonic_point];
-            }*/
+            }
 
             // Find the bitonic point using linear search.
             int compare_against = split_ascending ? 0x00 : 0xFF;
@@ -209,7 +266,7 @@ void PathSort::sort_bitonic(int* keys,
         _mm256_store_si256(left + f, L);
       }
     } while (!(++level_counts[level] & 0x1));
-  }
+  }*/
 }
 
 //---
@@ -243,11 +300,11 @@ int main()
 
 
   Random random(ticks_now());
-  const int count = 65536;
+  const int count = 65536 * 1024;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  for (int i = 0; i < 1; ++i) {
+  for (int i = 0; i < 1000; ++i) {
     for (int i = 0; i < count; ++i) {
       keys[i] = random.next() & 0xFFFFFFFF;
     //  printf("%u\n", keys[i]);
@@ -260,13 +317,13 @@ int main()
     //avx2::quicksort(keys, count);
     printf("%llu ticks\n", ticks_now() - now);
 
-    /*
+    
     for (unsigned int i = 0; i < count - 1; ++i) {
-      printf("%i\n", keys[i]);
+    //  printf("%i\n", keys[i]);
       if (keys[i] > keys[i + 1]) {
         printf("FUCK\n");
       }
-    }*/
+    }
   }
 
   _aligned_free(keys);
