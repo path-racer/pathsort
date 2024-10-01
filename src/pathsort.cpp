@@ -118,11 +118,12 @@ void PathSort::sort_bitonic(int* keys,
     _mm256_store_si256(&_keys[r + 1], r1);
   }
 
+  /*
   printf("--------\n");
   for (unsigned int i = 0; i < count; ++i) {
     printf("%i, ", keys[i]);
   }
-  printf("--------\n");
+  printf("--------\n");*/
 
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
@@ -139,7 +140,8 @@ void PathSort::sort_bitonic(int* keys,
         for (unsigned int s = 0; s < splits; ++s) {
           bool split_ascending = (s & 0x1) == 0;
           bool swap_ascending = split_ascending ^ ascending;
-          unsigned int bitonic_point = 0;
+          unsigned int step_size = split_registers >> 1;
+          unsigned int bitonic_point = 0; // step_size;
           __m256i* nleft = &left[s << descent];
           __m256i* nright = nleft + split_registers;
           __m256i L = nleft[bitonic_point];
@@ -181,7 +183,7 @@ void PathSort::sort_bitonic(int* keys,
               }
             }
           }
-          // Now that we've found the bitonic point, swap it, then all after it for ascending, or all before it for descending.
+          // Now that we've found the bitonic point, do the necessary swaps.
           __m256i min = _mm256_min_epi32(L, R);
           __m256i max = _mm256_max_epi32(L, R);
           _mm256_store_si256(&nleft[bitonic_point], ascending ? min : max);
@@ -241,97 +243,30 @@ int main()
 
 
   Random random(ticks_now());
-  const int count = 64;
+  const int count = 65536;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  int v[64] =
-  {
-    0,
-    0,
-    0,
-    1,
-    1,
-    8,
-    8,
-    8,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    8,
-    8,
-    8,
-    8,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    8,
-    8,
-    8,
-    8,
-    8,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    9,
-    8,
-    8,
-    8,
-    1,
-    1,
-    1,
-    1,
-    0,
-    0,
-    0
-  };
-
   for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0x9;
+      keys[i] = random.next() & 0xFFFFFFFF;
     //  printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
-    pathsort.sort_bitonic(v, nullptr, count);
+    pathsort.sort_bitonic(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
     printf("%llu ticks\n", ticks_now() - now);
 
+    /*
     for (unsigned int i = 0; i < count - 1; ++i) {
-      printf("%i\n", v[i]);
-      if (v[i] > v[i + 1]) {
+      printf("%i\n", keys[i]);
+      if (keys[i] > keys[i + 1]) {
         printf("FUCK\n");
       }
-    }
+    }*/
   }
 
   _aligned_free(keys);
