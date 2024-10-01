@@ -111,8 +111,8 @@
 
 //---
 void PathSort::sort_bitonic(int* keys,
-  void* values,
-  unsigned int count)
+                            void* values,
+                            unsigned int count)
 {
   __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
@@ -129,13 +129,83 @@ void PathSort::sort_bitonic(int* keys,
     }
   }
 
-  /*
+  
   printf("--------\n");
   for (unsigned int i = 0; i < count; ++i) {
     printf("%i, ", keys[i]);
   }
-  printf("--------\n");*/
+  printf("--------\n");
 
+  
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    unsigned int level = 1;
+    do {
+      ++level;
+      const unsigned int batch_registers = 0x1 << (level - 1);
+      int ascending = (r & (0x1 << level)) == 0;
+      __m256i* left = &_keys[(r >> level) << level];
+      __m256i* right = left + batch_registers;
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int descent = level; descent > 0; --descent) {
+        const unsigned int splits = registers >> descent;
+        const unsigned int split_registers = 0x1 << (descent - 1);
+        const unsigned int split_elements = split_registers << 3;
+        for (unsigned int s = 0; s < splits; ++s) {
+          int swap_ascending = (descent == level) ? 1 : ((s + ascending) & 0x1);
+          int* nleft = (int*)&left[s << descent];
+          int* nright = (int*)(nleft + split_elements);
+          // Find the bitonic point with binary search.
+          unsigned int step_size = split_registers << 2;
+          unsigned int bitonic_point = step_size;
+          step_size >>= 1;
+          int L = nleft[bitonic_point];
+          int R = nright[bitonic_point];
+          int comparison = swap_ascending ? (L > R) : (R > L);
+          while (step_size > 0) {
+            bitonic_point += !comparison * step_size;
+            bitonic_point -= comparison * step_size;
+            int L = nleft[bitonic_point];
+            int R = nright[bitonic_point];
+            comparison = swap_ascending ? (L > R) : (R > L);
+            step_size >>= 1;
+          }
+          bitonic_point += !comparison;
+
+
+          // ascending && swap_ascending = left is good
+          // ascending && !swap_ascending = right is good
+          // !ascending && swap_ascending = right is good
+          // !ascending && !swap_ascending = left is good
+
+          // ascending ^ swap_ascending = right is good
+
+
+          int swap_left = ascending ^ swap_ascending;
+          int left_side = swap_left ? 0 : bitonic_point;
+          int right_side = swap_left ? (bitonic_point + (bitonic_point < split_elements)) : split_elements;
+
+          for (unsigned int n = left_side; n < right_side; ++n) {
+            int a = nleft[n];
+            int b = nright[n];
+            int min = a <= b ? a : b;
+            int max = a > b ? a : b;
+            nleft[n] = ascending ? min : max;
+            nright[n] = ascending ? max : min;
+          }
+        }
+      }
+      for (unsigned int f = 0; f < registers; ++f) {
+        __m256i* L = &left[f];
+        if (ascending) {
+          SORT8_ALREADY_BITONIC_ASC(*L);
+        } else {
+          SORT8_ALREADY_BITONIC_DESC(*L);
+        }
+      }
+    } while (!(++level_counts[level] & 0x1));
+  }
+
+  /*
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
     do {
@@ -172,7 +242,7 @@ void PathSort::sort_bitonic(int* keys,
         }
       }
     } while (!(++level_counts[level] & 0x1));
-  }
+  }*/
 
   /*
   for (unsigned int r = 0; r < total_registers; r += 4) {
@@ -292,14 +362,14 @@ int main()
 
 
   Random random(ticks_now());
-  const int count = 65536;
+  const int count = 64;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  for (int i = 0; i < 1000; ++i) {
+  for (int i = 0; i < 100; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0xFFFFFFFF;
-    //  printf("%u\n", keys[i]);
+      keys[i] = random.next() & 0x7;
+     // printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
