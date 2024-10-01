@@ -72,9 +72,9 @@
     __m256i _max = _mm256_max_epi32(V0, V1); \
     V0 = _min; \
     V1 = _max; \
-    SORT8(V0, true); \
-    SORT8(V1, true); \
   } \
+  SORT8(V0, true); \
+  SORT8(V1, true); \
 }
 
 //---
@@ -110,7 +110,8 @@ void PathSort::sort_bitonic(int* keys,
     SORT8(r1, false);
     if (r & 0x2) {
       MERGE16_DESCENDING(r0, r1);
-    } else {
+    }
+    else {
       MERGE16_ASCENDING(r0, r1);
     }
     _mm256_store_si256(&_keys[r], r0);
@@ -136,6 +137,8 @@ void PathSort::sort_bitonic(int* keys,
         const unsigned int splits = registers >> descent;
         const unsigned int split_registers = 0x1 << (descent - 1);
         for (unsigned int s = 0; s < splits; ++s) {
+          bool split_ascending = (s & 0x1) == 0;
+          bool swap_ascending = split_ascending ^ ascending;
           unsigned int bitonic_point = 0;
           __m256i* nleft = &left[s << descent];
           __m256i* nright = nleft + split_registers;
@@ -167,11 +170,12 @@ void PathSort::sort_bitonic(int* keys,
             }*/
 
             // Find the bitonic point using linear search.
+            int compare_against = split_ascending ? 0x00 : 0xFF;
             for (unsigned int i = 0; i < split_registers; ++i) {
               L = nleft[i];
               R = nright[i];
               int compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(L, R)));
-              if (compare > 0x00) {
+              if (compare != compare_against) {
                 bitonic_point = i;
                 break;
               }
@@ -182,28 +186,25 @@ void PathSort::sort_bitonic(int* keys,
           __m256i max = _mm256_max_epi32(L, R);
           _mm256_store_si256(&nleft[bitonic_point], ascending ? min : max);
           _mm256_store_si256(&nright[bitonic_point], ascending ? max : min);
-          int count = ascending ? (split_registers - (bitonic_point + 1)) : bitonic_point;
-          int start = ascending ? (bitonic_point + 1) : 0;
+          int left = swap_ascending ? 0 : (bitonic_point + 1);
+          int right = swap_ascending ? bitonic_point : split_registers;
+          int count = right - left;
           for (int s = 0; s < count; ++s) {
-            __m256i L = nleft[start + s];
-            __m256i R = nright[start + s];
-            _mm256_store_si256(&nleft[start + s], R);
-            _mm256_store_si256(&nright[start + s], L);
+            __m256i L = nleft[left + s];
+            __m256i R = nright[left + s];
+            _mm256_store_si256(&nleft[left + s], R);
+            _mm256_store_si256(&nright[left + s], L);
           }
         }
       }
-      for (unsigned int f = 0; f < registers; f += 2) {
+      for (unsigned int f = 0; f < registers; ++f) {
         __m256i L = _mm256_load_si256(left + f);
-        __m256i R = _mm256_load_si256(left + f + 1);
         if (ascending) {
           SORT8(L, true);
-          SORT8(R, true);
         } else {
           SORT8(L, false);
-          SORT8(R, false);
         }
         _mm256_store_si256(left + f, L);
-        _mm256_store_si256(left + f + 1, R);
       }
     } while (!(++level_counts[level] & 0x1));
   }
@@ -220,6 +221,25 @@ unsigned long long ticks_now()
 //---
 int main()
 {
+  /*
+  __m256i V0 = _mm256_setr_epi32(9, 9, 9, 9, 9, 9, 8, 8);
+  __m256i V1 = _mm256_setr_epi32(9, 9, 9, 8, 8, 8, 8, 8);
+  __m256i _min = _mm256_min_epi32(V0, V1);
+  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(V0, _min)));
+  if (ordered == 0x00) {
+      __m256i t = V0;
+      V0 = V1;
+      V1 = t;
+  }
+  else if (ordered < 0xFF) {
+      __m256i _max = _mm256_max_epi32(V0, V1);
+      V0 = _min;
+      V1 = _max;
+      SORT8(V0, true);
+      SORT8(V1, true);
+  }*/
+
+
   Random random(ticks_now());
   const int count = 64;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
@@ -307,7 +327,7 @@ int main()
     printf("%llu ticks\n", ticks_now() - now);
 
     for (unsigned int i = 0; i < count - 1; ++i) {
- //     printf("%i\n", keys[i]);
+      printf("%i\n", v[i]);
       if (v[i] > v[i + 1]) {
         printf("FUCK\n");
       }
