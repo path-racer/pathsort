@@ -118,17 +118,15 @@ void PathSort::sort_bitonic(int* keys,
   unsigned int level_counts[32] = { 0 };
   unsigned int total_registers = count >> 3;
   for (unsigned int r = 0; r < total_registers; r += 2) {
-    __m256i r0 = _mm256_load_si256(&_keys[r]);
-    __m256i r1 = _mm256_load_si256(&_keys[r + 1]);
-    SORT8(r0, true);
-    SORT8(r1, false);
+    __m256i* r0 = &_keys[r];
+    __m256i* r1 = &_keys[r + 1];
+    SORT8(*r0, true);
+    SORT8(*r1, false);
     if (r & 0x2) {
-      MERGE16_DESCENDING(r0, r1);
+      MERGE16_DESCENDING(*r0, *r1);
     } else {
-      MERGE16_ASCENDING(r0, r1);
+      MERGE16_ASCENDING(*r0, *r1);
     }
-    _mm256_store_si256(&_keys[r], r0);
-    _mm256_store_si256(&_keys[r + 1], r1);
   }
 
   /*
@@ -165,18 +163,13 @@ void PathSort::sort_bitonic(int* keys,
           }
         }
       }
-      for (unsigned int f = 0; f < registers; f += 2) {
-        __m256i L = _mm256_load_si256(left + f);
-        __m256i R = _mm256_load_si256(left + f + 1);
+      for (unsigned int f = 0; f < registers; ++f) {
+        __m256i* L = &left[f];
         if (ascending) {
-          SORT8(L, true);
-          SORT8(R, true);
+          SORT8_ALREADY_BITONIC_ASC(*L);
         } else {
-          SORT8(L, false);
-          SORT8(R, false);
+          SORT8_ALREADY_BITONIC_DESC(*L);
         }
-        _mm256_store_si256(left + f, L);
-        _mm256_store_si256(left + f + 1, R);
       }
     } while (!(++level_counts[level] & 0x1));
   }
@@ -299,7 +292,7 @@ int main()
 
 
   Random random(ticks_now());
-  const int count = 65536 * 1024;
+  const int count = 65536;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
