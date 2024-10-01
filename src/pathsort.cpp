@@ -130,13 +130,6 @@ void PathSort::sort_bitonic(int* keys,
   }
 
   
-  printf("--------\n");
-  for (unsigned int i = 0; i < count; ++i) {
-    printf("%i, ", keys[i]);
-  }
-  printf("--------\n");
-
-  
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
     do {
@@ -170,16 +163,6 @@ void PathSort::sort_bitonic(int* keys,
             step_size >>= 1;
           }
           bitonic_point += !comparison;
-
-
-          // ascending && swap_ascending = left is good
-          // ascending && !swap_ascending = right is good
-          // !ascending && swap_ascending = right is good
-          // !ascending && !swap_ascending = left is good
-
-          // ascending ^ swap_ascending = right is good
-
-
           int swap_left = ascending ^ swap_ascending;
           int left_side = swap_left ? 0 : bitonic_point;
           int right_side = swap_left ? (bitonic_point + (bitonic_point < split_elements)) : split_elements;
@@ -202,6 +185,12 @@ void PathSort::sort_bitonic(int* keys,
           SORT8_ALREADY_BITONIC_DESC(*L);
         }
       }
+
+      printf("--------\n");
+      for (unsigned int i = 0; i < count; ++i) {
+        printf("%i, ", keys[i]);
+      }
+      printf("--------\n");
     } while (!(++level_counts[level] & 0x1));
   }
 
@@ -360,20 +349,24 @@ int main()
       SORT8(V1, true);
   }*/
 
-
   Random random(ticks_now());
   const int count = 64;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  for (int i = 0; i < 100; ++i) {
+  int v[64] =
+  {
+    0, 1, 2, 2, 2, 2, 3, 3, 5, 5, 5, 6, 7, 7, 7, 7, 7, 7, 7, 7, 6, 5, 5, 5, 5, 3, 3, 2, 2, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 7, 7, 7, 7, 3, 3, 3, 3, 3, 2, 2, 2, 1, 1, 0, 0, 0, 0
+  };
+
+  for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
       keys[i] = random.next() & 0x7;
      // printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
-    pathsort.sort_bitonic(keys, nullptr, count);
+    pathsort.sort_bitonic(v, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
@@ -382,7 +375,7 @@ int main()
     
     for (unsigned int i = 0; i < count - 1; ++i) {
     //  printf("%i\n", keys[i]);
-      if (keys[i] > keys[i + 1]) {
+      if (v[i] > v[i + 1]) {
         printf("FUCK\n");
       }
     }
