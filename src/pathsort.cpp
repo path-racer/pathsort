@@ -117,6 +117,7 @@ static void merge_split(int* left,
                         bool ascending,
                         bool sub_ascending)
 {
+  unsigned int total_count = left_count + right_count;
   unsigned int count;
   if (right_count < left_count) {
     left = right - right_count;
@@ -156,14 +157,17 @@ static void merge_split(int* left,
    /    \
   /      \
 
-
   \      /
    \    /
     \  /
      \/
 
+
+  unsigned int swap_left = ascending ? bitonic_point : 0;
+  unsigned int swap_right = ascending ? total_count : (bitonic_point + (bitonic_point < total_count));
+
   // Perform the necessary swaps around the bitonic point.
-  for (unsigned int n = bitonic_point; n < batch_elements; ++n) {
+  for (unsigned int n = swap_left; n < swap_right; ++n) {
     int t = left[n];
     left[n] = right[n];
     right[n] = t;
