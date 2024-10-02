@@ -152,17 +152,6 @@ static void merge_split(int* left,
   // If descending but swap_asending, we swap before the point.
 
 
-     /\
-    /  \
-   /    \
-  /      \
-
-  \      /
-   \    /
-    \  /
-     \/
-
-
   unsigned int swap_left = ascending ? bitonic_point : 0;
   unsigned int swap_right = ascending ? total_count : (bitonic_point + (bitonic_point < total_count));
 
