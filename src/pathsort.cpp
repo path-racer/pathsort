@@ -110,6 +110,38 @@
 }
 
 //---
+static void merge_split(int* left,
+                        int* right,
+                        unsigned int left_count,
+                        unsigned int right_count,
+                        bool ascending)
+{
+  // Find the bitonic point with binary search.
+  unsigned int step_size = batch_elements >> 1;
+  unsigned int bitonic_point = step_size;
+  step_size >>= 1;
+  int L = left[bitonic_point];
+  int R = right[bitonic_point];
+  int comparison = L > R;
+  while (step_size > 0) {
+    bitonic_point += !comparison * step_size;
+    bitonic_point -= comparison * step_size;
+    int L = left[bitonic_point];
+    int R = right[bitonic_point];
+    comparison = L > R;
+    step_size >>= 1;
+  }
+  bitonic_point += !comparison;
+
+  // Perform the necessary swaps around the bitonic point.
+  for (unsigned int n = bitonic_point; n < batch_elements; ++n) {
+    int t = left[n];
+    left[n] = right[n];
+    right[n] = t;
+  }
+}
+
+//---
 void PathSort::sort_bitonic(int* keys,
                             void* values,
                             unsigned int count)
@@ -136,6 +168,37 @@ void PathSort::sort_bitonic(int* keys,
   }
   printf("--------\n");*/
 
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    unsigned int level = 1;
+    do {
+      ++level;
+      const unsigned int batch_elements = 0x8 << (level - 1);
+      int ascending = (r & (0x1 << level)) == 0;
+      int* left = (int*)&_keys[(r >> level) << level];
+      int* right = (int*)(left + batch_elements);
+      
+      // We want to recursively merge an ascending/descending, to create 2 new bitonic sequences,
+      // which we will then split at their bitonic points to create a new ascending/descending pair 
+      // to merge and split.
+      // This should continue recursively until the bitonic point creates a bitonic sequence that is
+      // 8 or less elements, then we can simply run over all the registers with AVX to sort.
+      merge_split(left, right, batch_elements, batch_elements);
+
+      // When this returns we should be ready to sort all of the registers to finish this.
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int f = 0; f < registers; ++f) {
+        __m256i* L = &left[f];
+        if (ascending) {
+          SORT8_ALREADY_BITONIC_ASC(*L);
+        } else {
+          SORT8_ALREADY_BITONIC_DESC(*L);
+        }
+      }
+
+    } while (!(++level_counts[level] & 0x1));
+  }
+
+  /*
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
     do {
@@ -171,7 +234,7 @@ void PathSort::sort_bitonic(int* keys,
         }
       }
     } while (!(++level_counts[level] & 0x1));
-  }
+  }*/
 
   /*
   for (unsigned int r = 0; r < total_registers; r += 4) {
