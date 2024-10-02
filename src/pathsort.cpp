@@ -114,8 +114,7 @@ static void merge_split(int* left,
                         int* right,
                         unsigned int left_count,
                         unsigned int right_count,
-                        bool ascending,
-                        bool sub_ascending)
+                        bool ascending)
 {
   unsigned int total_count = left_count + right_count;
   unsigned int count;
@@ -142,6 +141,17 @@ static void merge_split(int* left,
     step_size >>= 1;
   }
   bitonic_point += !comparison;
+
+  // When ascending, we will always get L ascending and R descending.
+  // When descending, we will always get L descending and R ascending.
+
+  \    /
+   \  /
+    \/
+    
+    /\
+   /  \
+  /    \
 
   // If swap_ascending, we swap L and R, so swap ascending always becomes true.
   // If ascending we swap after, descending we swap before.
