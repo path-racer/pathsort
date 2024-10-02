@@ -116,8 +116,16 @@ static void merge_split(int* left,
                         unsigned int right_count,
                         bool ascending)
 {
+  unsigned int count;
+  if (right_count < left_count) {
+    left = right - right_count;
+    count = right_count;
+  } else {
+    count = left_count;
+  }
+
   // Find the bitonic point with binary search.
-  unsigned int step_size = batch_elements >> 1;
+  unsigned int step_size = count >> 1;
   unsigned int bitonic_point = step_size;
   step_size >>= 1;
   int L = left[bitonic_point];
@@ -132,6 +140,25 @@ static void merge_split(int* left,
     step_size >>= 1;
   }
   bitonic_point += !comparison;
+
+  // If ascending but swap_descending, we swap before the point.
+  // If ascending but swap_ascending, we swap after the point
+  // If descending but swap_descending, we swap after the point
+  // If descending but swap_asending, we swap before the point.
+
+  // But what happens if we swap L and R?
+
+
+     /\
+    /  \
+   /    \
+  /      \
+
+
+  \      /
+   \    /
+    \  /
+     \/
 
   // Perform the necessary swaps around the bitonic point.
   for (unsigned int n = bitonic_point; n < batch_elements; ++n) {
