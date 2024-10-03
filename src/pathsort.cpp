@@ -116,7 +116,6 @@ static void merge_split(int* left,
                         unsigned int total_count,
                         bool ascending)
 {
-
   // Find the bitonic point with binary search.
   unsigned int step_size = compare_count >> 1;
   unsigned int bitonic_point = step_size;
@@ -165,11 +164,14 @@ static void merge_split(int* left,
     right[n] = t;
   }
 
-  // We need to swap left and right 
   unsigned int left_count = bitonic_point;
   unsigned int right_count = total_count - bitonic_point;
-  merge_split(ascending ? left : right, ascending ? right : left, left_count, left_count + right_count, ascending);
-  merge_split(ascending ? right : left, ascending ? left : right, left_count, left_count + right_count, ascending);
+  // We now have left and right each containing a bitonic sequence pivoting around the bitonic point.
+  if (ascending) {
+    merge_split(left, left + left_count, left_count < right_count ? left_count : right_count, left_count, true);
+    merge_split(right, left + left_count, left_count < right_count ? left_count : right_count, left_count, true);
+  } else {
+  }
 }
 
 //---
