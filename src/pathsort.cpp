@@ -112,21 +112,13 @@
 //---
 static void merge_split(int* left,
                         int* right,
-                        unsigned int left_count,
-                        unsigned int right_count,
+                        unsigned int compare_count,
+                        unsigned int total_count,
                         bool ascending)
 {
-  unsigned int total_count = left_count + right_count;
-  unsigned int count;
-  if (right_count < left_count) {
-    left = right - right_count;
-    count = right_count;
-  } else {
-    count = left_count;
-  }
 
   // Find the bitonic point with binary search.
-  unsigned int step_size = count >> 1;
+  unsigned int step_size = compare_count >> 1;
   unsigned int bitonic_point = step_size;
   step_size >>= 1;
   int L = left[bitonic_point];
@@ -145,13 +137,14 @@ static void merge_split(int* left,
   // When ascending, we will always get L ascending and R descending.
   // When descending, we will always get L descending and R ascending.
 
+  /*
   \    /
    \  /
     \/
     
     /\
    /  \
-  /    \
+  /    \*/
 
   // If swap_ascending, we swap L and R, so swap ascending always becomes true.
   // If ascending we swap after, descending we swap before.
@@ -171,6 +164,12 @@ static void merge_split(int* left,
     left[n] = right[n];
     right[n] = t;
   }
+
+  // We need to swap left and right 
+  unsigned int left_count = bitonic_point;
+  unsigned int right_count = total_count - bitonic_point;
+  merge_split(ascending ? left : right, ascending ? right : left, left_count, left_count + right_count, ascending);
+  merge_split(ascending ? right : left, ascending ? left : right, left_count, left_count + right_count, ascending);
 }
 
 //---
@@ -214,7 +213,7 @@ void PathSort::sort_bitonic(int* keys,
       // to merge and split.
       // This should continue recursively until the bitonic point creates a bitonic sequence that is
       // 8 or less elements, then we can simply run over all the registers with AVX to sort.
-      merge_split(left, right, batch_elements, batch_elements);
+      merge_split(left, right, batch_elements, batch_elements << 1, true);
 
       // When this returns we should be ready to sort all of the registers to finish this.
       const unsigned int registers = 0x1 << level;
