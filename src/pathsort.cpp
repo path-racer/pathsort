@@ -212,20 +212,8 @@ void PathSort::sort_bitonic(int* keys,
       // which we will then split at their bitonic points to create a new ascending/descending pair 
       // to merge and split.
       // This should continue recursively until the bitonic point creates a bitonic sequence that is
-      // 8 or less elements, then we can simply run over all the registers with AVX to sort.
+      // 8 or less elements, which we sort, while the other half should already be sorted as we want.
       merge_split(left, right, batch_elements, batch_elements << 1, true);
-
-      // When this returns we should be ready to sort all of the registers to finish this.
-      const unsigned int registers = 0x1 << level;
-      for (unsigned int f = 0; f < registers; ++f) {
-        __m256i* L = &left[f];
-        if (ascending) {
-          SORT8_ALREADY_BITONIC_ASC(*L);
-        } else {
-          SORT8_ALREADY_BITONIC_DESC(*L);
-        }
-      }
-
     } while (!(++level_counts[level] & 0x1));
   }
 
