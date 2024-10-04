@@ -110,68 +110,107 @@
 }
 
 //---
-static void merge_split(int* left,
-                        int* right,
-                        unsigned int compare_count,
-                        unsigned int total_count,
-                        bool ascending)
+#define BINARY_SEARCH(BITONIC_POINT, COMPARATOR) \
+{ \
+  unsigned int step_size = count >> 1; \
+  BITONIC_POINT = step_size; \
+  step_size >>= 1; \
+  int L = left[BITONIC_POINT]; \
+  int R = right[BITONIC_POINT]; \
+  int comparison = COMPARATOR; \
+  while (step_size > 0) { \
+    BITONIC_POINT += !comparison * step_size; \
+    BITONIC_POINT -= comparison * step_size; \
+    int L = left[BITONIC_POINT]; \
+    int R = right[BITONIC_POINT]; \
+    comparison = COMPARATOR; \
+    step_size >>= 1; \
+  } \
+  BITONIC_POINT += !comparison; \
+}
+
+//---
+#define SWAPS(SWAP_LEFT, SWAP_RIGHT) \
+{ \
+  for (unsigned int n = SWAP_LEFT; n < SWAP_RIGHT; ++n) { \
+    int t = left[n]; \
+    left[n] = right[n]; \
+    right[n] = t; \
+  } \
+}
+
+//---
+#define RECURSE(F0, F1) \
+{ \
+  unsigned int left_count = bitonic_point; \
+  unsigned int right_count = count - bitonic_point; \
+  count = left_count < right_count ? left_count : right_count; \
+  if (left_count > 8) { \
+    int* new_right = right - right_count; \
+    int* new_left = new_right - count; \
+    F0(new_left, new_right, count); \
+  } \
+  if (right_count > 8) { \
+    int* new_right = right + count; \
+    int* new_left = right; \
+    F1(new_right, new_left, count); \
+  } \
+}
+
+//---
+void PathSort::merge_asc_asc(int* left,
+                             int* right,
+                             unsigned int count)
 {
-  // Find the bitonic point with binary search.
-  unsigned int step_size = compare_count >> 1;
-  unsigned int bitonic_point = step_size;
-  step_size >>= 1;
-  int L = left[bitonic_point];
-  int R = right[bitonic_point];
-  int comparison = L > R;
-  while (step_size > 0) {
-    bitonic_point += !comparison * step_size;
-    bitonic_point -= comparison * step_size;
-    int L = left[bitonic_point];
-    int R = right[bitonic_point];
-    comparison = L > R;
-    step_size >>= 1;
-  }
-  bitonic_point += !comparison;
+  // Find the bitonic point between the two arrays.
+  unsigned int bitonic_point;
+  BINARY_SEARCH(bitonic_point, (L > R));
+  // Swap after the bitonic point, inclusively.
+  SWAPS(bitonic_point, count);
+  // Recurse on the two new bitonic sequences based on the resulting shapes.
+  RECURSE(merge_asc_asc, merge_asc_desc);
+}
 
-  // When ascending, we will always get L ascending and R descending.
-  // When descending, we will always get L descending and R ascending.
+//---
+void PathSort::merge_asc_desc(int* left,
+                              int* right,
+                              unsigned int count)
+{ 
+  // Find the bitonic point between the two arrays.
+  unsigned int bitonic_point;
+  BINARY_SEARCH(bitonic_point, (R > L));
+  // Swap before the bitonic point, inclusively.
+  SWAPS(0, bitonic_point + (bitonic_point < count));
+  // Recurse on the two new bitonic sequences based on the resulting shapes.
+  RECURSE(merge_asc_asc, merge_asc_desc);
+}
 
-  /*
-  \    /
-   \  /
-    \/
-    
-    /\
-   /  \
-  /    \*/
+//---
+void PathSort::merge_desc_desc(int* left,
+                               int* right,
+                               unsigned int count)
+{ 
+  // Find the bitonic point between the two arrays.
+  unsigned int bitonic_point;
+  BINARY_SEARCH(bitonic_point, (R > L));
+  // Swap after the bitonic point, inclusively.
+  SWAPS(bitonic_point, count);
+  // Recurse on the two new bitonic sequences based on the resulting shapes.
+  RECURSE(merge_desc_desc, merge_desc_asc);
+}
 
-  // If swap_ascending, we swap L and R, so swap ascending always becomes true.
-  // If ascending we swap after, descending we swap before.
-
-  // If ascending but swap_descending, we swap before the point.
-  // If ascending but swap_ascending, we swap after the point
-  // If descending but swap_descending, we swap after the point
-  // If descending but swap_asending, we swap before the point.
-
-
-  unsigned int swap_left = ascending ? bitonic_point : 0;
-  unsigned int swap_right = ascending ? total_count : (bitonic_point + (bitonic_point < total_count));
-
-  // Perform the necessary swaps around the bitonic point.
-  for (unsigned int n = swap_left; n < swap_right; ++n) {
-    int t = left[n];
-    left[n] = right[n];
-    right[n] = t;
-  }
-
-  unsigned int left_count = bitonic_point;
-  unsigned int right_count = total_count - bitonic_point;
-  // We now have left and right each containing a bitonic sequence pivoting around the bitonic point.
-  if (ascending) {
-    merge_split(left, left + left_count, left_count < right_count ? left_count : right_count, left_count, true);
-    merge_split(right, left + left_count, left_count < right_count ? left_count : right_count, left_count, true);
-  } else {
-  }
+//---
+void PathSort::merge_desc_asc(int* left,
+                              int* right,
+                              unsigned int count)
+{
+  // Find the bitonic point between the two arrays.
+  unsigned int bitonic_point;
+  BINARY_SEARCH(bitonic_point, (L > R));
+  // Swap before the bitonic point, inclusively.
+  SWAPS(0, bitonic_point + (bitonic_point < count));
+  // Recurse on the two new bitonic sequences based on the resulting shapes.
+  RECURSE(merge_desc_desc, merge_desc_asc);
 }
 
 //---
@@ -209,13 +248,20 @@ void PathSort::sort_bitonic(int* keys,
       int ascending = (r & (0x1 << level)) == 0;
       int* left = (int*)&_keys[(r >> level) << level];
       int* right = (int*)(left + batch_elements);
-      
-      // We want to recursively merge an ascending/descending, to create 2 new bitonic sequences,
-      // which we will then split at their bitonic points to create a new ascending/descending pair 
-      // to merge and split.
-      // This should continue recursively until the bitonic point creates a bitonic sequence that is
-      // 8 or less elements, which we sort, while the other half should already be sorted as we want.
-      merge_split(left, right, batch_elements, batch_elements << 1, true);
+      if (ascending) {
+        merge_asc_asc(left, right, batch_elements);
+      } else {
+        merge_asc_desc(left, right, batch_elements);
+      }
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int f = 0; f < registers; ++f) {
+        __m256i* L = (__m256i*)&left[f];
+        if (ascending) {
+          SORT8_ALREADY_BITONIC_ASC(*L);
+        } else {
+          SORT8_ALREADY_BITONIC_DESC(*L);
+        }
+      }
     } while (!(++level_counts[level] & 0x1));
   }
 

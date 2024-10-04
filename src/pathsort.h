@@ -12,6 +12,18 @@ struct PathSort
   //---
   PathSort() {}
   ~PathSort() {}
+  void merge_asc_asc(int* left,
+                     int* right,
+                     unsigned int count);
+  void merge_asc_desc(int* left,
+                      int* right,
+                      unsigned int count);
+  void merge_desc_asc(int* left,
+                      int* right,
+                      unsigned int count);
+  void merge_desc_desc(int* left,
+                       int* right,
+                       unsigned int count);
   void sort_bitonic(int* keys,
                     void* values,
                     unsigned int count);
