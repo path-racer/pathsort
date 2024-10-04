@@ -145,12 +145,12 @@
   unsigned int left_count = bitonic_point; \
   unsigned int right_count = count - bitonic_point; \
   count = left_count < right_count ? left_count : right_count; \
-  if (left_count > 8) { \
+  if (left_count > 1) { \
     int* new_right = right - right_count; \
     int* new_left = new_right - count; \
     F0(new_left, new_right, count); \
   } \
-  if (right_count > 8) { \
+  if (right_count > 1) { \
     int* new_right = right + count; \
     int* new_left = right; \
     F1(new_right, new_left, count); \
@@ -251,16 +251,7 @@ void PathSort::sort_bitonic(int* keys,
       if (ascending) {
         merge_asc_asc(left, right, batch_elements);
       } else {
-        merge_asc_desc(left, right, batch_elements);
-      }
-      const unsigned int registers = 0x1 << level;
-      for (unsigned int f = 0; f < registers; ++f) {
-        __m256i* L = (__m256i*)&left[f];
-        if (ascending) {
-          SORT8_ALREADY_BITONIC_ASC(*L);
-        } else {
-          SORT8_ALREADY_BITONIC_DESC(*L);
-        }
+        merge_desc_asc(left, right, batch_elements);
       }
     } while (!(++level_counts[level] & 0x1));
   }
