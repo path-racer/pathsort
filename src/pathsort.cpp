@@ -137,6 +137,7 @@
 //---
 #define RECURSE(F0, F1) \
 { \
+  right += start; \
   unsigned int right_count = end - bitonic_point; \
   unsigned int smaller_count = (bitonic_point < right_count) ? bitonic_point : right_count; \
   unsigned int search_start = bitonic_point - smaller_count; \
