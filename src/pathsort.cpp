@@ -112,21 +112,16 @@
 //---
 #define BINARY_SEARCH(BITONIC_POINT, COMPARATOR) \
 { \
-  unsigned int step_size = count >> 1; \
-  BITONIC_POINT = step_size; \
-  step_size >>= 1; \
-  int L = left[BITONIC_POINT]; \
-  int R = right[BITONIC_POINT]; \
-  int comparison = COMPARATOR; \
-  while (step_size > 0) { \
-    BITONIC_POINT += !comparison * step_size; \
-    BITONIC_POINT -= comparison * step_size; \
+  int low = start; \
+  int high = end; \
+  while (low <= high) { \
+    BITONIC_POINT = low + ((high - low) >> 1); \
     int L = left[BITONIC_POINT]; \
     int R = right[BITONIC_POINT]; \
-    comparison = COMPARATOR; \
-    step_size >>= 1; \
+    int comparison = COMPARATOR; \
+    high -= comparison * (high - BITONIC_POINT + 1); \
+    low += !comparison * (BITONIC_POINT - low + 1); \
   } \
-  BITONIC_POINT += !comparison; \
 }
 
 //---
@@ -142,31 +137,29 @@
 //---
 #define RECURSE(F0, F1) \
 { \
-  unsigned int left_count = bitonic_point; \
-  unsigned int right_count = count - bitonic_point; \
-  count = left_count < right_count ? left_count : right_count; \
-  if (left_count > 1) { \
-    int* new_right = right - right_count; \
-    int* new_left = new_right - count; \
-    F0(new_left, new_right, count); \
+  unsigned int right_count = end - bitonic_point; \
+  unsigned int smaller_count = (bitonic_point < right_count) ? bitonic_point : right_count; \
+  unsigned int search_start = bitonic_point - smaller_count; \
+  unsigned int search_end = bitonic_point + smaller_count; \
+  if (bitonic_point > 1) { \
+    F0(left, left + smaller_count, search_start, search_end); \
   } \
   if (right_count > 1) { \
-    int* new_right = right + count; \
-    int* new_left = right; \
-    F1(new_right, new_left, count); \
+    F1(right, right + smaller_count, search_start, search_end); \
   } \
 }
 
 //---
 void PathSort::merge_asc_asc(int* left,
                              int* right,
-                             unsigned int count)
+                             unsigned int start,
+                             unsigned int end)
 {
   // Find the bitonic point between the two arrays.
-  unsigned int bitonic_point;
+  unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (L > R));
   // Swap after the bitonic point, inclusively.
-  SWAPS(bitonic_point, count);
+  SWAPS(bitonic_point, end);
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_asc_asc, merge_asc_desc);
 }
@@ -174,13 +167,14 @@ void PathSort::merge_asc_asc(int* left,
 //---
 void PathSort::merge_asc_desc(int* left,
                               int* right,
-                              unsigned int count)
+                              unsigned int start,
+                              unsigned int end)
 { 
   // Find the bitonic point between the two arrays.
-  unsigned int bitonic_point;
+  unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (R > L));
   // Swap before the bitonic point, inclusively.
-  SWAPS(0, bitonic_point + (bitonic_point < count));
+  SWAPS(0, bitonic_point + (bitonic_point < end));
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_asc_asc, merge_asc_desc);
 }
@@ -188,13 +182,14 @@ void PathSort::merge_asc_desc(int* left,
 //---
 void PathSort::merge_desc_desc(int* left,
                                int* right,
-                               unsigned int count)
+                               unsigned int start,
+                               unsigned int end)
 { 
   // Find the bitonic point between the two arrays.
-  unsigned int bitonic_point;
+  unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (R > L));
   // Swap after the bitonic point, inclusively.
-  SWAPS(bitonic_point, count);
+  SWAPS(bitonic_point, end);
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_desc_desc, merge_desc_asc);
 }
@@ -202,13 +197,14 @@ void PathSort::merge_desc_desc(int* left,
 //---
 void PathSort::merge_desc_asc(int* left,
                               int* right,
-                              unsigned int count)
+                              unsigned int start,
+                              unsigned int end)
 {
   // Find the bitonic point between the two arrays.
-  unsigned int bitonic_point;
+  unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (L > R));
   // Swap before the bitonic point, inclusively.
-  SWAPS(0, bitonic_point + (bitonic_point < count));
+  SWAPS(0, bitonic_point + (bitonic_point < end));
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_desc_desc, merge_desc_asc);
 }
@@ -233,12 +229,11 @@ void PathSort::sort_bitonic(int* keys,
     }
   }
 
-  /*
   printf("--------\n");
   for (unsigned int i = 0; i < count; ++i) {
-    printf("%i, ", keys[i]);
+    printf("%i\n", keys[i]);
   }
-  printf("--------\n");*/
+  printf("--------\n");
 
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
@@ -249,235 +244,12 @@ void PathSort::sort_bitonic(int* keys,
       int* left = (int*)&_keys[(r >> level) << level];
       int* right = (int*)(left + batch_elements);
       if (ascending) {
-        merge_asc_asc(left, right, batch_elements);
+        merge_asc_asc(left, right, 0, batch_elements);
       } else {
-        merge_desc_asc(left, right, batch_elements);
+        merge_desc_asc(left, right, 0, batch_elements);
       }
     } while (!(++level_counts[level] & 0x1));
   }
-
-  /*
-  for (unsigned int r = 0; r < total_registers; r += 4) {
-    unsigned int level = 1;
-    do {
-      ++level;
-      const unsigned int batch_registers = 0x1 << (level - 1);
-      int ascending = (r & (0x1 << level)) == 0;
-      __m256i* left = &_keys[(r >> level) << level];
-      __m256i* right = left + batch_registers;
-      const unsigned int registers = 0x1 << level;
-      for (unsigned int descent = level; descent > 0; --descent) {
-        const unsigned int splits = registers >> descent;
-        const unsigned int split_registers = 0x1 << (descent - 1);
-        const unsigned int split_elements = split_registers << 3;
-        for (unsigned int s = 0; s < splits; ++s) {
-          int* nleft = (int*)&left[s << descent];
-          int* nright = (int*)(nleft + split_elements);
-          for (unsigned int n = 0; n < split_elements; ++n) {
-            int a = nleft[n];
-            int b = nright[n];
-            int min = a <= b ? a : b;
-            int max = a > b ? a : b;
-            nleft[n] = ascending ? min : max;
-            nright[n] = ascending ? max : min;
-          }
-        }
-      }
-      for (unsigned int f = 0; f < registers; ++f) {
-        __m256i* L = &left[f];
-        if (ascending) {
-          SORT8_ALREADY_BITONIC_ASC(*L);
-        } else {
-          SORT8_ALREADY_BITONIC_DESC(*L);
-        }
-      }
-    } while (!(++level_counts[level] & 0x1));
-  }*/
-
-  /*
-  for (unsigned int r = 0; r < total_registers; r += 4) {
-    unsigned int level = 1;
-    do {
-      ++level;
-      const unsigned int batch_registers = 0x1 << (level - 1);
-      int ascending = (r & (0x1 << level)) == 0;
-      __m256i* left = &_keys[(r >> level) << level];
-      __m256i* right = left + batch_registers;
-      const unsigned int registers = 0x1 << level;
-      for (unsigned int descent = level; descent > 0; --descent) {
-        const unsigned int splits = registers >> descent;
-        const unsigned int split_registers = 0x1 << (descent - 1);
-        const unsigned int split_elements = split_registers << 3;
-        for (unsigned int s = 0; s < splits; ++s) {
-          int swap_ascending = (descent == level) ? 1 : ((s + ascending) & 0x1);
-          int* nleft = (int*)&left[s << descent];
-          int* nright = (int*)(nleft + split_elements);
-          // Find the bitonic point with binary search.
-          unsigned int step_size = split_registers << 2;
-          unsigned int bitonic_point = step_size;
-          step_size >>= 1;
-          int L = nleft[bitonic_point];
-          int R = nright[bitonic_point];
-          int comparison = swap_ascending ? (L > R) : (R > L);
-          while (step_size > 0) {
-            bitonic_point += !comparison * step_size;
-            bitonic_point -= comparison * step_size;
-            int L = nleft[bitonic_point];
-            int R = nright[bitonic_point];
-            comparison = swap_ascending ? (L > R) : (R > L);
-            step_size >>= 1;
-          }
-          bitonic_point += !comparison;
-          int swap_left = ascending ^ swap_ascending;
-          int left_side = swap_left ? 0 : bitonic_point;
-          int right_side = swap_left ? (bitonic_point + (bitonic_point < split_elements)) : split_elements;
-
-          for (unsigned int n = left_side; n < right_side; ++n) {
-            int a = nleft[n];
-            int b = nright[n];
-            int min = a <= b ? a : b;
-            int max = a > b ? a : b;
-            nleft[n] = ascending ? min : max;
-            nright[n] = ascending ? max : min;
-          }
-        }
-      }
-      for (unsigned int f = 0; f < registers; ++f) {
-        __m256i* L = &left[f];
-        if (ascending) {
-          SORT8_ALREADY_BITONIC_ASC(*L);
-        } else {
-          SORT8_ALREADY_BITONIC_DESC(*L);
-        }
-      }
-
-    } while (!(++level_counts[level] & 0x1));
-  }*/
-
-  /*
-  for (unsigned int r = 0; r < total_registers; r += 4) {
-    unsigned int level = 1;
-    do {
-      ++level;
-      const unsigned int batch_registers = 0x1 << (level - 1);
-      bool ascending = (r & (0x1 << level)) == 0;
-      __m256i* left = &_keys[(r >> level) << level];
-      __m256i* right = left + batch_registers;
-      const unsigned int registers = 0x1 << level;
-      for (unsigned int descent = level; descent > 0; --descent) {
-        const unsigned int splits = registers >> descent;
-        const unsigned int split_registers = 0x1 << (descent - 1);
-        for (unsigned int s = 0; s < splits; ++s) {
-          __m256i* nleft = &left[s << descent];
-          __m256i* nright = nleft + split_registers;
-          for (unsigned int n = 0; n < split_registers; ++n) {
-            __m256i L = _mm256_load_si256(nleft);
-            __m256i R = _mm256_load_si256(nright);
-            __m256i _min = _mm256_min_epi32(L, R);
-            __m256i _max = _mm256_max_epi32(L, R);
-            _mm256_store_si256(nleft, ascending ? _min : _max);
-            _mm256_store_si256(nright, ascending ? _max : _min);
-            ++nleft;
-            ++nright;
-          }
-        }
-      }
-      for (unsigned int f = 0; f < registers; ++f) {
-        __m256i* L = &left[f];
-        if (ascending) {
-          SORT8_ALREADY_BITONIC_ASC(*L);
-        } else {
-          SORT8_ALREADY_BITONIC_DESC(*L);
-        }
-      }
-    } while (!(++level_counts[level] & 0x1));
-  }*/
-
-  /*
-  for (unsigned int r = 0; r < total_registers; r += 4) {
-    unsigned int level = 1;
-    do {
-      ++level;
-      const unsigned int batch_registers = 0x1 << (level - 1);
-      const bool ascending = ((r & (0x1 << level)) == 0);
-      __m256i* left = &_keys[(r >> level) << level];
-      __m256i* right = left + batch_registers;
-      const unsigned int registers = 0x1 << level;
-      for (unsigned int descent = level; descent > 0; --descent) {
-        const unsigned int splits = registers >> descent;
-        const unsigned int split_registers = 0x1 << (descent - 1);
-        for (unsigned int s = 0; s < splits; ++s) {
-          bool split_ascending = (s & 0x1) == 0;
-          bool swap_ascending = split_ascending ^ ascending;
-          unsigned int step_size = split_registers >> 1;
-          unsigned int bitonic_point = 0; // step_size;
-          __m256i* nleft = &left[s << descent];
-          __m256i* nright = nleft + split_registers;
-          __m256i L = nleft[bitonic_point];
-          __m256i R = nright[bitonic_point];
-          if (split_registers > 1) {
-
-            // Find the bitonic point using binary search.
-            __m256i* bleft = nleft;
-            __m256i* bright = nright;
-            int compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
-            while (((compare == 0x00) || (compare == 0xFF)) &&
-                   (step_size > 0)) {
-              bool move_left = (compare == 0x00);
-              bool move_right = (compare == 0xFF);
-              bitonic_point -= move_left * step_size;
-              bitonic_point += move_right * step_size;
-              step_size >>= 1;
-              L = nleft[bitonic_point];
-              R = nright[bitonic_point];
-              compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(R, L)));
-            }
-            // If search ended without a mixed register, the bitonic point is the first element of the next register.
-            if (compare == 0x00) {
-              bitonic_point += (bitonic_point + 1) < split_registers;
-              L = nleft[bitonic_point];
-              R = nright[bitonic_point];
-            }
-
-            // Find the bitonic point using linear search.
-            int compare_against = split_ascending ? 0x00 : 0xFF;
-            for (unsigned int i = 0; i < split_registers; ++i) {
-              L = nleft[i];
-              R = nright[i];
-              int compare = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(L, R)));
-              if (compare != compare_against) {
-                bitonic_point = i;
-                break;
-              }
-            }
-          }
-          // Now that we've found the bitonic point, do the necessary swaps.
-          __m256i min = _mm256_min_epi32(L, R);
-          __m256i max = _mm256_max_epi32(L, R);
-          _mm256_store_si256(&nleft[bitonic_point], ascending ? min : max);
-          _mm256_store_si256(&nright[bitonic_point], ascending ? max : min);
-          int left = swap_ascending ? 0 : (bitonic_point + 1);
-          int right = swap_ascending ? bitonic_point : split_registers;
-          int count = right - left;
-          for (int s = 0; s < count; ++s) {
-            __m256i L = nleft[left + s];
-            __m256i R = nright[left + s];
-            _mm256_store_si256(&nleft[left + s], R);
-            _mm256_store_si256(&nright[left + s], L);
-          }
-        }
-      }
-      for (unsigned int f = 0; f < registers; ++f) {
-        __m256i L = _mm256_load_si256(left + f);
-        if (ascending) {
-          SORT8(L, true);
-        } else {
-          SORT8(L, false);
-        }
-        _mm256_store_si256(left + f, L);
-      }
-    } while (!(++level_counts[level] & 0x1));
-  }*/
 }
 
 //---
