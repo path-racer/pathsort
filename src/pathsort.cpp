@@ -112,12 +112,12 @@
 //---
 #define BINARY_SEARCH(BITONIC_POINT, COMPARATOR) \
 { \
-  int low = start; \
-  int high = end; \
+  int low = search_start; \
+  int high = search_end; \
   while (low <= high) { \
     BITONIC_POINT = low + ((high - low) >> 1); \
     int L = left[BITONIC_POINT]; \
-    int R = right[BITONIC_POINT]; \
+    int R = right[BITONIC_POINT - search_start]; \
     int comparison = COMPARATOR; \
     high -= comparison * (high - BITONIC_POINT + 1); \
     low += !comparison * (BITONIC_POINT - low + 1); \
@@ -127,40 +127,40 @@
 //---
 #define SWAPS(SWAP_LEFT, SWAP_RIGHT) \
 { \
-  for (unsigned int n = SWAP_LEFT; n < SWAP_RIGHT; ++n) { \
+  for (unsigned int n = SWAP_LEFT; n <= SWAP_RIGHT; ++n) { \
     int t = left[n]; \
-    left[n] = right[n]; \
-    right[n] = t; \
+    left[n] = right[n - search_start]; \
+    right[n - search_start] = t; \
   } \
 }
 
 //---
 #define RECURSE(F0, F1) \
 { \
-  right += start; \
-  unsigned int right_count = end - bitonic_point; \
-  unsigned int smaller_count = (bitonic_point < right_count) ? bitonic_point : right_count; \
-  unsigned int search_start = bitonic_point - smaller_count; \
-  unsigned int search_end = bitonic_point + smaller_count; \
-  if (bitonic_point > 1) { \
-    F0(left, left + smaller_count, search_start, search_end); \
-  } \
-  if (right_count > 1) { \
-    F1(right, right + smaller_count, search_start, search_end); \
+  if (bitonic_point < search_end) { \
+    if (bitonic_point > 1) { \
+      F0(left, left + bitonic_point, left + left_count); \
+    } \
+    if (bitonic_point > search_start) { \
+      F1(right, right + bitonic_point - search_start, right + right_count); \
+    } \
   } \
 }
 
 //---
 void PathSort::merge_asc_asc(int* left,
                              int* right,
-                             unsigned int start,
-                             unsigned int end)
+                             int* end)
 {
+  unsigned int left_count = right - left;
+  unsigned int right_count = end - right;
+  unsigned int search_start = (left_count <= right_count) ? 0 : (left_count - right_count);
+  unsigned int search_end = left_count;
   // Find the bitonic point between the two arrays.
   unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (L > R));
   // Swap after the bitonic point, inclusively.
-  SWAPS(bitonic_point, end);
+  SWAPS(bitonic_point, search_end - 1);
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_asc_asc, merge_asc_desc);
 }
@@ -168,14 +168,17 @@ void PathSort::merge_asc_asc(int* left,
 //---
 void PathSort::merge_asc_desc(int* left,
                               int* right,
-                              unsigned int start,
-                              unsigned int end)
-{ 
+                              int* end)
+{
+  unsigned int left_count = right - left;
+  unsigned int right_count = end - right;
+  unsigned int search_start = (left_count <= right_count) ? 0 : (left_count - right_count);
+  unsigned int search_end = left_count;
   // Find the bitonic point between the two arrays.
   unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (R > L));
   // Swap before the bitonic point, inclusively.
-  SWAPS(0, bitonic_point + (bitonic_point < end));
+  SWAPS(search_start, bitonic_point);
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_asc_asc, merge_asc_desc);
 }
@@ -183,14 +186,17 @@ void PathSort::merge_asc_desc(int* left,
 //---
 void PathSort::merge_desc_desc(int* left,
                                int* right,
-                               unsigned int start,
-                               unsigned int end)
-{ 
+                               int* end)
+{
+  unsigned int left_count = right - left;
+  unsigned int right_count = end - right;
+  unsigned int search_start = (left_count <= right_count) ? 0 : (left_count - right_count);
+  unsigned int search_end = left_count;
   // Find the bitonic point between the two arrays.
   unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (R > L));
   // Swap after the bitonic point, inclusively.
-  SWAPS(bitonic_point, end);
+  SWAPS(bitonic_point, search_end - 1);
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_desc_desc, merge_desc_asc);
 }
@@ -198,14 +204,17 @@ void PathSort::merge_desc_desc(int* left,
 //---
 void PathSort::merge_desc_asc(int* left,
                               int* right,
-                              unsigned int start,
-                              unsigned int end)
+                              int* end)
 {
+  unsigned int left_count = right - left;
+  unsigned int right_count = end - right;
+  unsigned int search_start = (left_count <= right_count) ? 0 : (left_count - right_count);
+  unsigned int search_end = left_count;
   // Find the bitonic point between the two arrays.
   unsigned int bitonic_point = 0;
   BINARY_SEARCH(bitonic_point, (L > R));
   // Swap before the bitonic point, inclusively.
-  SWAPS(0, bitonic_point + (bitonic_point < end));
+  SWAPS(search_start, bitonic_point);
   // Recurse on the two new bitonic sequences based on the resulting shapes.
   RECURSE(merge_desc_desc, merge_desc_asc);
 }
@@ -245,9 +254,9 @@ void PathSort::sort_bitonic(int* keys,
       int* left = (int*)&_keys[(r >> level) << level];
       int* right = (int*)(left + batch_elements);
       if (ascending) {
-        merge_asc_asc(left, right, 0, batch_elements);
+        merge_asc_asc(left, right, right + batch_elements);
       } else {
-        merge_desc_asc(left, right, 0, batch_elements);
+        merge_desc_asc(left, right, right + batch_elements);
       }
     } while (!(++level_counts[level] & 0x1));
   }
