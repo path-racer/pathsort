@@ -207,8 +207,6 @@ void PathSort::merge_asc_asc(int* left,
 }
 
 //---
-// Here we alter the search to account for local descension, and swap before the bitonic point
-// to maintain global ascension.
 void PathSort::merge_asc_desc(int* left,
                               int* right,
                               int left_count,
