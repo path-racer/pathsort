@@ -14,10 +14,12 @@ struct PathSort
   ~PathSort() {}
   void merge_asc_asc(int* left,
                      int* right,
-                     int* end);
+                     int left_count,
+                     int right_count);
   void merge_asc_desc(int* left,
                       int* right,
-                      int* end);
+                      int left_count,
+                      int right_count);
   void merge_desc_asc(int* left,
                       int* right,
                       int* end);
