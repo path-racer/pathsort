@@ -157,28 +157,32 @@
   int new_right_right = right_count - new_right_left; \
   if (new_left_left && new_left_right) { \
     F0(left, left + new_left_left, new_left_left, new_left_right); \
+  } else if (new_left_right) { \
+    REVERSE(left, left_count); \
   } \
   if (new_right_left && new_right_right) { \
     F1(right, right + new_right_left, new_right_left, new_right_right); \
-  } else { \
+  } else if (new_right_left) { \
     REVERSE(right, right_count); \
   } \
 }
 
 //---
-#define RECURSE_DESC(F0, F1, L_OFFSET, R_OFFSET) \
+#define RECURSE_DESC(F0, F1) \
 { \
-  int new_left_left = bitonic_point - L_OFFSET; \
+  int new_left_left = bitonic_point; \
   int new_left_right = left_count - new_left_left; \
-  int new_right_left = bitonic_point - R_OFFSET; \
+  int new_right_left = bitonic_point; \
   int new_right_right = right_count - new_right_left; \
   if (new_left_left && new_left_right) { \
     F0(left, left + new_left_left, new_left_left, new_left_right); \
-  } else { \
+  } else if (new_left_right) { \
     REVERSE(left, left_count); \
   } \
   if (new_right_left && new_right_right) { \
     F1(right, right + new_right_left, new_right_left, new_right_right); \
+  } else if (new_right_left) { \
+    REVERSE(right, right_count); \
   } \
 }
 
@@ -217,7 +221,7 @@ void PathSort::merge_asc_desc(int* left,
   int search_end = (left_count > right_count) ? right_count : left_count;
   BINARY_SEARCH(bitonic_point, (L < R), 0, 0);
   SWAPS(search_start, bitonic_point, 0, 0);
-  RECURSE_DESC(merge_asc_asc, merge_asc_desc, 0, 0);
+  RECURSE_DESC(merge_asc_asc, merge_asc_desc);
 }
 
 //---
@@ -254,11 +258,12 @@ void PathSort::sort_bitonic(int* keys,
     }
   }
 
+  /*
   printf("--------\n");
   for (unsigned int i = 0; i < count; ++i) {
     printf("%i\n", keys[i]);
   }
-  printf("--------\n");
+  printf("--------\n");*/
 
   for (unsigned int r = 0; r < total_registers; r += 4) {
     unsigned int level = 1;
@@ -311,50 +316,14 @@ int main()
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  int v[32] =
-  {
-    0,
-    0,
-    1,
-    1,
-    2,
-    2,
-    2,
-    3,
-    4,
-    4,
-    4,
-    5,
-    5,
-    5,
-    7,
-    7,
-    7,
-    7,
-    7,
-    6,
-    6,
-    5,
-    4,
-    3,
-    3,
-    3,
-    3,
-    2,
-    2,
-    2,
-    0,
-    0
-  };
-
-  for (int i = 0; i < 1; ++i) {
+  for (int i = 0; i < 10000; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0x7;
+      keys[i] = random.next() & 0xFFFFFFFF;
      // printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
-    pathsort.sort_bitonic(v, nullptr, count);
+    pathsort.sort_bitonic(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
@@ -362,8 +331,8 @@ int main()
 
     
     for (unsigned int i = 0; i < count - 1; ++i) {
-      printf("%i\n", v[i]);
-      if (v[i] > v[i + 1]) {
+      //printf("%i\n", keys[i]);
+      if (keys[i] > keys[i + 1]) {
         printf("FUCK\n");
       }
     }
