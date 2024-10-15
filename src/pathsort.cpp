@@ -417,14 +417,21 @@ void PathSort::radix_sort(unsigned int* values,
     int v = (values[i] >> shift) & 0xFF;
     new_values[bucket_offsets[v] + (bucket_counter[v]++)] = values[i];
   }
-  for (unsigned int b = 0; b < 256; ++b) {
-    unsigned int bucket_count = bucket_counter[b];
-    if (bucket_count > 1) {
-      avx2::quicksort((int*)&new_values[bucket_offsets[b]], bucket_count);
-    }
-  }
   memcpy(values, new_values, sizeof(int) * count);
   free(new_values);
+  if (shift > 0) {
+    for (unsigned int b = 0; b < 256; ++b) {
+      unsigned int bucket_count = bucket_counter[b];
+      if (bucket_count > 1) {
+        if (bucket_count <= 512) {
+          //sort_avx_asc((int*)&values[bucket_offsets[b]], nullptr, bucket_count);
+          avx2::quicksort((int*)&values[bucket_offsets[b]], bucket_count);
+        } else {
+          radix_sort(&values[bucket_offsets[b]], bucket_count, shift - 8);
+        }
+      }
+    }
+  }
 }
 
 //---
@@ -445,17 +452,17 @@ int main()
 
   for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0x7FFFFFFF;
+      keys[i] = random.next() & 0xFFFFFFFF;
      // printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
     //pathsort.sort_bitonic(keys, nullptr, count);
     //pathsort.radix_sort((unsigned int*)keys, count, 24);
-    pathsort.sort_avx_asc(keys, nullptr, count);
+    //pathsort.sort_avx_asc(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
-    //avx2::quicksort(keys, count);
+    avx2::quicksort(keys, count);
     printf("%llu ticks\n", ticks_now() - now);
 
     
