@@ -388,8 +388,8 @@ int main()
     }
 
     unsigned long long now = ticks_now();
-    pathsort.sort_bitonic(keys, nullptr, count);
-    //pathsort.sort_avx_asc(keys, nullptr, count);
+    //pathsort.sort_bitonic(keys, nullptr, count);
+    pathsort.sort_avx_asc(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);

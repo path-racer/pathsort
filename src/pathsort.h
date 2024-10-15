@@ -22,17 +22,18 @@ struct PathSort
                       int right_count);
   void merge_desc_asc(int* left,
                       int* right,
-                      int* end);
+                      int left_count,
+                      int right_count);
   void merge_desc_desc(int* left,
                        int* right,
-                       int* end);
+                       int left_count,
+                       int right_count);
   void sort_bitonic(int* keys,
                     void* values,
                     unsigned int count);
-
-  void sort_avx(int* keys,
-                void* values,
-                unsigned int count);
+  void sort_avx_asc(int* keys,
+                    void* values,
+                    unsigned int count);
 };
 
 //---
