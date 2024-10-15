@@ -34,6 +34,9 @@ struct PathSort
   void sort_avx_asc(int* keys,
                     void* values,
                     unsigned int count);
+  void radix_sort(unsigned int* values,
+                  unsigned int count,
+                  unsigned int shift);
 };
 
 //---

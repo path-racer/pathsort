@@ -192,6 +192,13 @@ void PathSort::merge_asc_asc(int* left,
                              int left_count,
                              int right_count)
 {
+  if (right[right_count - 1] > right[-1]) {
+    REVERSE(right, right_count);
+    return;
+  } else if (left_count + right_count <= 512) {
+    avx2::quicksort(left, left_count + right_count);
+    return;
+  }
   int bitonic_point = 0;
   int search_start, search_end, l_offset, r_offset;
   if (left_count > right_count) {
@@ -216,6 +223,13 @@ void PathSort::merge_asc_desc(int* left,
                               int left_count,
                               int right_count)
 {
+  if (left[0] < right[0]) {
+    REVERSE(left, left_count);
+    return;
+  } else if (left_count + right_count <= 512) {
+    avx2::quicksort(left, left_count + right_count);
+    return;
+  }
   int bitonic_point = 0;
   int search_start = 0;
   int search_end = (left_count > right_count) ? right_count : left_count;
@@ -230,6 +244,14 @@ void PathSort::merge_desc_asc(int* left,
                               int left_count,
                               int right_count)
 {
+  if (left[0] > right[0]) {
+    REVERSE(left, left_count);
+    return;
+  } else if (left_count + right_count <= 512) {
+    avx2::quicksort(left, left_count + right_count);
+    REVERSE(left, left_count + right_count);
+    return;
+  }
   int bitonic_point = 0;
   int search_start = 0;
   int search_end = (left_count > right_count) ? right_count : left_count;
@@ -244,6 +266,14 @@ void PathSort::merge_desc_desc(int* left,
                                int left_count,
                                int right_count)
 {
+  if (right[-1] > right[right_count - 1]) {
+    REVERSE(right, right_count);
+    return;
+  } else if (left_count + right_count <= 512) {
+    avx2::quicksort(left, left_count + right_count);
+    REVERSE(left, left_count + right_count);
+    return;
+  }
   int bitonic_point = 0;
   int search_start, search_end, l_offset, r_offset;
   if (left_count > right_count) {
@@ -366,6 +396,38 @@ void PathSort::sort_avx_asc(int* keys,
 }
 
 //---
+void PathSort::radix_sort(unsigned int* values,
+                          unsigned int count,
+                          unsigned int shift)
+{
+  int* new_values = (int*)malloc(sizeof(int) * count);
+  unsigned int bucket_offsets[256] = { 0 };
+  unsigned int bucket_counter[256] = { 0 };
+  for (unsigned int i = 0; i < count; ++i) {
+    ++bucket_offsets[(values[i] >> shift) & 0xFF];
+  }
+  unsigned int previous_count = bucket_offsets[0];
+  bucket_offsets[0] = 0;
+  for (unsigned int b = 1; b < 256; ++b) {
+    unsigned int current = bucket_offsets[b];
+    bucket_offsets[b] = bucket_offsets[b - 1] + previous_count;
+    previous_count = current;
+  }
+  for (unsigned int i = 0; i < count; ++i) {
+    int v = (values[i] >> shift) & 0xFF;
+    new_values[bucket_offsets[v] + (bucket_counter[v]++)] = values[i];
+  }
+  for (unsigned int b = 0; b < 256; ++b) {
+    unsigned int bucket_count = bucket_counter[b];
+    if (bucket_count > 1) {
+      avx2::quicksort((int*)&new_values[bucket_offsets[b]], bucket_count);
+    }
+  }
+  memcpy(values, new_values, sizeof(int) * count);
+  free(new_values);
+}
+
+//---
 unsigned long long ticks_now()
 {
   LARGE_INTEGER now_ticks;
@@ -381,14 +443,15 @@ int main()
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < count; ++i) {
-      keys[i] = random.next() & 0xFFFFFFFF;
+      keys[i] = random.next() & 0x7FFFFFFF;
      // printf("%u\n", keys[i]);
     }
 
     unsigned long long now = ticks_now();
     //pathsort.sort_bitonic(keys, nullptr, count);
+    //pathsort.radix_sort((unsigned int*)keys, count, 24);
     pathsort.sort_avx_asc(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
@@ -399,7 +462,7 @@ int main()
     for (unsigned int i = 0; i < count - 1; ++i) {
       //printf("%i\n", keys[i]);
       if (keys[i] > keys[i + 1]) {
-        printf("FUCK\n");
+   //     printf("FUCK\n");
       }
     }
   }
