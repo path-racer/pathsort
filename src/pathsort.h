@@ -29,6 +29,10 @@ struct PathSort
   void sort_bitonic(int* keys,
                     void* values,
                     unsigned int count);
+
+  void sort_avx(int* keys,
+                void* values,
+                unsigned int count);
 };
 
 //---

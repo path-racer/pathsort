@@ -283,6 +283,65 @@ void PathSort::sort_bitonic(int* keys,
 }
 
 //---
+void PathSort::sort_avx(int* keys,
+                        void* values,
+                        unsigned int count)
+{
+  __m256i* _keys = (__m256i*)keys;
+  unsigned int level_counts[32] = { 0 };
+  unsigned int total_registers = count >> 3;
+  for (unsigned int r = 0; r < total_registers; r += 2) {
+    __m256i* r0 = &_keys[r];
+    __m256i* r1 = &_keys[r + 1];
+    SORT8(*r0, true);
+    SORT8(*r1, false);
+    if (r & 0x2) {
+      MERGE16_DESCENDING(*r0, *r1);
+    } else {
+      MERGE16_ASCENDING(*r0, *r1);
+    }
+  }
+
+  for (unsigned int r = 0; r < total_registers; r += 4) {
+    unsigned int level = 1;
+    do {
+      ++level;
+      const unsigned int batch_registers = 0x1 << (level - 1);
+      bool ascending = (r & (0x1 << level)) == 0;
+      __m256i* left = &_keys[(r >> level) << level];
+      __m256i* right = left + batch_registers;
+      const unsigned int registers = 0x1 << level;
+      for (unsigned int descent = level; descent > 0; --descent) {
+        const unsigned int splits = registers >> descent;
+        const unsigned int split_registers = 0x1 << (descent - 1);
+        for (unsigned int s = 0; s < splits; ++s) {
+          __m256i* nleft = &left[s << descent];
+          __m256i* nright = nleft + split_registers;
+          for (unsigned int n = 0; n < split_registers; ++n) {
+            __m256i L = _mm256_load_si256(nleft);
+            __m256i R = _mm256_load_si256(nright);
+            __m256i _min = _mm256_min_epi32(L, R);
+            __m256i _max = _mm256_max_epi32(L, R);
+            _mm256_store_si256(nleft, ascending ? _min : _max);
+            _mm256_store_si256(nright, ascending ? _max : _min);
+            ++nleft;
+            ++nright;
+          }
+        }
+      }
+      for (unsigned int f = 0; f < registers; ++f) {
+        __m256i* L = &left[f];
+        if (ascending) {
+          SORT8_ALREADY_BITONIC_ASC(*L);
+        } else {
+          SORT8_ALREADY_BITONIC_DESC(*L);
+        }
+      }
+    } while (!(++level_counts[level] & 0x1));
+  }
+}
+
+//---
 unsigned long long ticks_now()
 {
   LARGE_INTEGER now_ticks;
@@ -293,30 +352,12 @@ unsigned long long ticks_now()
 //---
 int main()
 {
-  /*
-  __m256i V0 = _mm256_setr_epi32(9, 9, 9, 9, 9, 9, 8, 8);
-  __m256i V1 = _mm256_setr_epi32(9, 9, 9, 8, 8, 8, 8, 8);
-  __m256i _min = _mm256_min_epi32(V0, V1);
-  int ordered = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(V0, _min)));
-  if (ordered == 0x00) {
-      __m256i t = V0;
-      V0 = V1;
-      V1 = t;
-  }
-  else if (ordered < 0xFF) {
-      __m256i _max = _mm256_max_epi32(V0, V1);
-      V0 = _min;
-      V1 = _max;
-      SORT8(V0, true);
-      SORT8(V1, true);
-  }*/
-
   Random random(ticks_now());
   const int count = 32;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
-  for (int i = 0; i < 10000; ++i) {
+  for (int i = 0; i < 10; ++i) {
     for (int i = 0; i < count; ++i) {
       keys[i] = random.next() & 0xFFFFFFFF;
      // printf("%u\n", keys[i]);
@@ -324,6 +365,7 @@ int main()
 
     unsigned long long now = ticks_now();
     pathsort.sort_bitonic(keys, nullptr, count);
+    //pathsort.sort_avx(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
