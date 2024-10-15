@@ -227,15 +227,39 @@ void PathSort::merge_asc_desc(int* left,
 //---
 void PathSort::merge_desc_asc(int* left,
                               int* right,
-                              int* end)
+                              int left_count,
+                              int right_count)
 {
+  int bitonic_point = 0;
+  int search_start = 0;
+  int search_end = (left_count > right_count) ? right_count : left_count;
+  BINARY_SEARCH(bitonic_point, (L > R), 0, 0);
+  SWAPS(search_start, bitonic_point, 0, 0);
+  RECURSE_DESC(merge_desc_desc, merge_desc_asc);
 }
 
 //---
 void PathSort::merge_desc_desc(int* left,
                                int* right,
-                               int* end)
+                               int left_count,
+                               int right_count)
 {
+  int bitonic_point = 0;
+  int search_start, search_end, l_offset, r_offset;
+  if (left_count > right_count) {
+    search_start = left_count - right_count;
+    search_end = left_count;
+    l_offset = 0;
+    r_offset = search_start;
+  } else {
+    search_start = right_count - left_count;
+    search_end = right_count;
+    l_offset = search_start;
+    r_offset = 0;
+  }
+  BINARY_SEARCH(bitonic_point, (L < R), l_offset, r_offset);
+  SWAPS(bitonic_point, search_end, l_offset, r_offset);
+  RECURSE_ASC(merge_desc_desc, merge_desc_asc, l_offset, r_offset);
 }
 
 //---
@@ -276,16 +300,16 @@ void PathSort::sort_bitonic(int* keys,
       if (ascending) {
         merge_asc_asc(left, right, batch_elements, batch_elements);
       } else {
-   //     merge_desc_asc(left, right, batch_elements, batch_elements);
+        merge_desc_asc(left, right, batch_elements, batch_elements);
       }
     } while (!(++level_counts[level] & 0x1));
   }
 }
 
 //---
-void PathSort::sort_avx(int* keys,
-                        void* values,
-                        unsigned int count)
+void PathSort::sort_avx_asc(int* keys,
+                            void* values,
+                            unsigned int count)
 {
   __m256i* _keys = (__m256i*)keys;
   unsigned int level_counts[32] = { 0 };
@@ -353,7 +377,7 @@ unsigned long long ticks_now()
 int main()
 {
   Random random(ticks_now());
-  const int count = 32;
+  const int count = 65536 * 32;
   int* keys = (int*)_aligned_malloc(sizeof(int) * count, 32);
   PathSort pathsort;
 
@@ -365,7 +389,7 @@ int main()
 
     unsigned long long now = ticks_now();
     pathsort.sort_bitonic(keys, nullptr, count);
-    //pathsort.sort_avx(keys, nullptr, count);
+    //pathsort.sort_avx_asc(keys, nullptr, count);
     //std::sort(keys, keys + count);
     //simd_merge_sort((float*)keys, count);
     //avx2::quicksort(keys, count);
